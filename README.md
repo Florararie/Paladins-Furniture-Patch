@@ -27,7 +27,3 @@ supplied without rebuilding the patch. Without one, the registry-generated asset
 Covered: all 1678 furniture blocks and 15531 block states are virtualised with collision stand-ins,
 models resolve for every state from the registry-generated assets, items and creative tabs are
 served, and the mod's chair entities are replaced with invisible seats.
-
-Not done yet: drawing container contents (fridges, freezers, ovens, stoves, cabinets, plates),
-which needs item displays per container block entity, and checking seat heights against the mod's own
-chair entities on a real client.
