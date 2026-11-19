@@ -33,7 +33,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
 import java.util.TreeMap;
 
@@ -880,8 +879,8 @@ public final class PFMBlockStates {
         }
 
         if (color != null) {
-            // The bed entity sheet is not in the block atlas, so the pack carries its own bed sheet
-            // in the block namespace. It is drawn at build time rather than shipped as a file.
+            // The bed entity sheet is not in the block atlas, so the pack carries vanilla's sheet
+            // under a block texture path where the mattress models can sample it.
             var bed = bedTexture(color);
             if (bed != null) {
                 var id = bed.toString();
@@ -1358,101 +1357,14 @@ public final class PFMBlockStates {
     }
 
     /**
-     * One bed sheet, generated into the pack from our own drawing.
+     * One bed sheet, copied from vanilla's {@code entity/bed/<colour>} texture.
      *
-     * <p>PFM's mattresses name vanilla's {@code entity/bed/<colour>}, which is an entity-atlas
-     * texture and cannot be sampled by a block or item model. The alternative is to ship a copy of
-     * the sheet, but the patch does not carry third-party visual assets: the sheet is drawn here in
-     * the same 64 by 64 layout PFM's models unwrap into.
+     * <p>PFM's mattresses name vanilla's entity-atlas texture, which cannot be sampled by a block
+     * or item model. The 16 sheets are shipped under the patch's block namespace with the same
+     * pixels; this only names the matching copy.
      */
-    private static @Nullable Identifier bedTexture(String color) {
-        var id = Identifier.fromNamespaceAndPath(PaladinsFurniturePatch.MOD_ID, "block/patch/bed/" + color);
-        if (GENERATED_TEXTURES.containsKey(id)) {
-            return id;
-        }
-
-        try {
-            GENERATED_TEXTURES.put(id, bedSheetPng(color));
-            return id;
-        } catch (IOException exception) {
-            PaladinsFurniturePatch.LOGGER.warn("Could not generate the bed sheet for {}", color, exception);
-            return null;
-        }
-    }
-
-    /** Draws the bed sheet in the regions PFM's mattress models unwrap into. */
-    private static byte[] bedSheetPng(String color) throws IOException {
-        var image = new BufferedImage(64, 64, BufferedImage.TYPE_INT_ARGB);
-        var random = new Random(0x5EEDBEDL ^ color.hashCode());
-        var base = dyeColor(color);
-        var cloth = shade(base, 0.94f);
-        var clothLight = shade(base, 1.05f);
-        var clothDark = shade(base, 0.72f);
-
-        // The mattress is laid out on the left of the sheet. x=2..6 and x=22..26 are its side
-        // faces, x=6..22 is the top, and x=22..38 is the front of the foot half.
-        for (int y = 5; y < 44; y++) {
-            for (int x = 0; x < 41; x++) {
-                var rgb = cloth;
-                if ((x >= 2 && x < 7) || (x >= 22 && x < 27)) {
-                    rgb = clothDark;
-                } else if (x >= 6 && x < 22 && (y < 20 || y >= 31)) {
-                    rgb = clothLight;
-                }
-                if (x >= 7 && x < 22 && (y == 33 || y == 34 || y == 39 || y == 40)) {
-                    rgb = shade(rgb, 0.88f);
-                }
-                if (y == 43) {
-                    rgb = shade(rgb, 0.78f);
-                }
-                image.setRGB(x, y, 0xFF000000 | noise(rgb, random, 9));
-            }
-        }
-
-        // The pillow sits across the head half. Its top is the first face PFM unwraps, and its
-        // sides sample the right edge of this block, so the rounded border is part of the drawing.
-        for (int y = 5; y < 14; y++) {
-            int left = y == 5 || y == 13 ? 4 : y == 6 || y == 12 ? 3 : 2;
-            int right = y == 5 || y == 13 ? 24 : y == 6 || y == 12 ? 25 : 26;
-            for (int x = left; x < right; x++) {
-                var edge = x == left || x == right - 1 || y == 5 || y == 13;
-                var rgb = edge ? 0xD4DBDE : 0xF7F7F7;
-                image.setRGB(x, y, 0xFF000000 | noise(rgb, random, 5));
-            }
-        }
-        for (int y = 7; y < 12; y++) {
-            for (int x = 6; x < 22; x++) {
-                if (x == 6 || x == 21 || y == 7 || y == 11) {
-                    image.setRGB(x, y, 0xFFE3E7E9);
-                }
-            }
-        }
-        for (int x = 5; x < 23; x++) {
-            image.setRGB(x, 6, 0xFFFFFFFF);
-        }
-
-        var out = new ByteArrayOutputStream();
-        ImageIO.write(image, "PNG", out);
-        return out.toByteArray();
-    }
-
-    private static int shade(int rgb, float factor) {
-        int red = Math.min(255, Math.round(((rgb >> 16) & 0xFF) * factor));
-        int green = Math.min(255, Math.round(((rgb >> 8) & 0xFF) * factor));
-        int blue = Math.min(255, Math.round((rgb & 0xFF) * factor));
-        return red << 16 | green << 8 | blue;
-    }
-
-    private static int noise(int rgb, Random random, int amount) {
-        int delta = random.nextInt(amount * 2 + 1) - amount;
-        int red = clamp(((rgb >> 16) & 0xFF) + delta);
-        int green = clamp(((rgb >> 8) & 0xFF) + delta);
-        int blue = clamp((rgb & 0xFF) + delta);
-        return red << 16 | green << 8 | blue;
-    }
-
-    private static int clamp(int value) {
-        return Math.max(0, Math.min(255, value));
+    private static Identifier bedTexture(String color) {
+        return Identifier.fromNamespaceAndPath(PaladinsFurniturePatch.MOD_ID, "block/patch/bed/" + color);
     }
 
     private static @Nullable Identifier lampShadeTexture(String color) {
@@ -1939,8 +1851,7 @@ public final class PFMBlockStates {
      * <p>The bed's mattresses are modelled across the bed, so composing them into the bed's own
      * length means turning them 90 degrees. The turn maps {@code x} to {@code z} and {@code z} to
      * {@code 16 - x}; the faces follow, north to west, west to south, south to east and east to
-     * north. The textures are solid bed sheet colours, so the faces keep their own coordinates - the
-     * pattern a rotation would move is not one that shows.
+     * north. Texture coordinates stay as the mattress models authored them.
      */
     private static void turnQuarter(JsonObject element) {
         var from = element.getAsJsonArray("from");
