@@ -46,6 +46,7 @@ public final class PFMAssets {
     private static final String GENERATED_PACK = "pfm/cache/pfm-assetpack";
     private static final String BLOCKSTATE_PATH = "assets/%s/blockstates/%s.json";
     private static final String ITEM_PATH = "assets/%s/items/%s.json";
+    private static final String MODEL_PATH = "assets/%s/models/%s.json";
     private static final String LANGUAGE_PATH = "assets/%s/lang/%s.json";
     private static final Gson GSON = new GsonBuilder().create();
 
@@ -81,6 +82,11 @@ public final class PFMAssets {
     public static byte @Nullable [] readItem(Identifier item) {
         var data = read(ITEM_PATH, item);
         return data != null ? data : PFMGeneratedAssets.item(item);
+    }
+
+    /** Reads one of the mod's model files, for a model the patch has to split or re-centre. */
+    public static byte @Nullable [] readModel(Identifier model) {
+        return read(MODEL_PATH, model);
     }
 
     private static byte @Nullable [] read(String template, Identifier id) {

@@ -174,11 +174,35 @@ public record PolyFurnitureItem(Item item, Identifier model) implements PolymerI
      * is handed to the client this way, in the colour the chair was placed as.
      */
     public static ItemStack officeChairStack(@Nullable DyeColor color) {
+        return officeChairStack(color, false);
+    }
+
+    /** The chair without its casters, which the entity draws as separate animated displays. */
+    public static ItemStack officeChairBodyStack(@Nullable DyeColor color) {
+        return officeChairStack(color, true);
+    }
+
+    private static ItemStack officeChairStack(@Nullable DyeColor color, boolean body) {
         var out = new ItemStack(Items.PAPER);
-        var model = PFMBlockStates.officeChairItemModel(PFMBlockStates.lampColorName(color));
+        var colorName = PFMBlockStates.lampColorName(color);
+        var model = body
+                ? PFMBlockStates.officeChairBodyModel(colorName)
+                : PFMBlockStates.officeChairItemModel(colorName);
         if (model == null) {
-            model = PFMBlockStates.officeChairItemModel("white");
+            model = body
+                    ? PFMBlockStates.officeChairBodyModel("white")
+                    : PFMBlockStates.officeChairItemModel("white");
         }
+        if (model != null) {
+            out.set(DataComponents.ITEM_MODEL, model);
+        }
+        return out;
+    }
+
+    /** One of the chair's casters at its own origin, for its animated display. */
+    public static ItemStack officeChairWheelStack() {
+        var out = new ItemStack(Items.PAPER);
+        var model = PFMBlockStates.officeChairWheelModel();
         if (model != null) {
             out.set(DataComponents.ITEM_MODEL, model);
         }

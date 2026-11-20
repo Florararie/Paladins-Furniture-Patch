@@ -6,6 +6,7 @@ import eu.pb4.paladinsfurniturepatch.impl.item.PolyFurnitureItem;
 import net.fabricmc.fabric.api.networking.v1.context.PacketContext;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
@@ -48,6 +49,14 @@ public final class PolyOfficeChair implements PolymerEntity {
 
     public PolyOfficeChair(Entity entity) {
         this.entity = entity;
+
+        // The chair's body is drawn by the item display itself; the casters need a display each so
+        // they can spin, and those are attached to the chair so they follow it. A client half of an
+        // integrated server also builds chairs, and cannot attach virtual entities, so only server
+        // levels are given the holder.
+        if (entity.level() instanceof ServerLevel) {
+            OfficeChairWheels.attach(entity);
+        }
     }
 
     @Override
@@ -64,7 +73,7 @@ public final class PolyOfficeChair implements PolymerEntity {
         }
 
         data.clear();
-        data.add(SynchedEntityData.DataValue.create(stackAccessor, PolyFurnitureItem.officeChairStack(color())));
+        data.add(SynchedEntityData.DataValue.create(stackAccessor, PolyFurnitureItem.officeChairBodyStack(color())));
 
         // NONE keeps the chair model at its own size and around the entity. The item's other display
         // contexts shrink and offset it the way an item held in a hand or lying on the ground is.

@@ -190,7 +190,9 @@ public final class PFMBlockStates {
         // every colour whether or not one is placed.
         for (var color : COLORS) {
             officeChairItemModel(color);
+            officeChairBodyModel(color);
         }
+        officeChairWheelModel();
 
         int items = 0;
         for (var item : BuiltInRegistries.ITEM) {
@@ -2084,6 +2086,181 @@ public final class PFMBlockStates {
 
         CHILD.put(id, json);
         return id;
+    }
+
+    /**
+     * The chair without its casters, for the display the animated wheels are added to separately.
+     *
+     * <p>The mod's renderer draws the base and the seat from separate models and draws each caster
+     * itself, so the full model's wheels are removed here and replaced by one display per caster.
+     */
+    public static @Nullable Identifier officeChairBodyModel(String color) {
+        var id = Identifier.fromNamespaceAndPath(NS, "block/patch/office_chair/" + color + "/body");
+        if (CHILD.containsKey(id)) {
+            return id;
+        }
+
+        var seat = officeChairTexture("seat", color);
+        var back = officeChairTexture("back", color);
+        if (seat == null || back == null) {
+            return null;
+        }
+
+        var body = officeChairBodyElements();
+        if (body == null) {
+            return null;
+        }
+
+        var json = new JsonObject();
+        json.addProperty("parent", NS + ":block/office_chair/office_chair");
+        var textures = new JsonObject();
+        textures.addProperty("3", seat.toString());
+        textures.addProperty("4", back.toString());
+        json.add("textures", textures);
+        json.add("elements", body);
+
+        CHILD.put(id, json);
+        return id;
+    }
+
+    /** The caster as a model centred on its own origin, so a display can spin it in place. */
+    public static @Nullable Identifier officeChairWheelModel() {
+        var id = Identifier.fromNamespaceAndPath(NS, "block/patch/office_chair/wheel");
+        if (CHILD.containsKey(id)) {
+            return id;
+        }
+
+        var wheel = officeChairModel("block/office_chair/office_chair_wheels");
+        if (wheel == null) {
+            return null;
+        }
+
+        var elements = wheel.getAsJsonArray("elements");
+        if (elements == null || elements.size() == 0 || !elements.get(0).isJsonObject()) {
+            return null;
+        }
+
+        // The source wheel is centred on (7.425, 1.0, 7.775). An item display subtracts half a
+        // block, so shifting it to (8, 8, 8) puts its centre at the display's own origin and the
+        // display can rotate it around that centre instead of orbiting it.
+        var element = elements.get(0).getAsJsonObject().deepCopy();
+        shiftOfficeChairElement(element, 8f - 7.425f, 8f - 1.0f, 8f - 7.775f);
+
+        var json = new JsonObject();
+        json.addProperty("parent", NS + ":block/office_chair/office_chair_wheels");
+        var single = new JsonArray();
+        single.add(element);
+        json.add("elements", single);
+
+        CHILD.put(id, json);
+        return id;
+    }
+
+    private static @Nullable JsonArray officeChairBodyElements() {
+        var full = officeChairModel("block/office_chair/office_chair");
+        if (full == null) {
+            return null;
+        }
+
+        var elements = full.getAsJsonArray("elements");
+        if (elements == null) {
+            return null;
+        }
+
+        var wheels = officeChairWheelElements(full);
+        if (wheels.isEmpty()) {
+            return null;
+        }
+
+        var body = elements.deepCopy();
+        for (int i = body.size() - 1; i >= 0; i--) {
+            if (wheels.contains(i)) {
+                body.remove(i);
+            }
+        }
+        return body;
+    }
+
+    /**
+     * The element indices the full chair's {@code wheels} group names. The group is read rather than
+     * assuming the casters are the last four elements, so a change in the model cannot silently
+     * leave a static wheel inside the body.
+     */
+    private static Set<Integer> officeChairWheelElements(JsonObject model) {
+        var indices = new HashSet<Integer>();
+        var groups = model.getAsJsonArray("groups");
+        if (groups != null) {
+            collectOfficeChairWheels(groups, indices);
+        }
+        return indices;
+    }
+
+    private static void collectOfficeChairWheels(JsonArray groups, Set<Integer> out) {
+        for (var group : groups) {
+            if (!group.isJsonObject()) {
+                continue;
+            }
+
+            var object = group.getAsJsonObject();
+            var name = object.get("name");
+            var children = object.getAsJsonArray("children");
+            if (children == null) {
+                continue;
+            }
+
+            if (name != null && name.isJsonPrimitive() && "wheels".equals(name.getAsString())) {
+                collectOfficeChairElementIndices(children, out);
+            } else {
+                collectOfficeChairWheels(children, out);
+            }
+        }
+    }
+
+    private static void collectOfficeChairElementIndices(JsonArray children, Set<Integer> out) {
+        for (var child : children) {
+            if (child.isJsonPrimitive() && child.getAsJsonPrimitive().isNumber()) {
+                out.add(child.getAsInt());
+            } else if (child.isJsonObject()) {
+                var nested = child.getAsJsonObject().getAsJsonArray("children");
+                if (nested != null) {
+                    collectOfficeChairElementIndices(nested, out);
+                }
+            }
+        }
+    }
+
+    private static void shiftOfficeChairElement(JsonObject element, float dx, float dy, float dz) {
+        shiftOfficeChairPoint(element.getAsJsonArray("from"), dx, dy, dz);
+        shiftOfficeChairPoint(element.getAsJsonArray("to"), dx, dy, dz);
+        if (element.has("rotation")) {
+            var rotation = element.getAsJsonObject("rotation");
+            if (rotation != null) {
+                shiftOfficeChairPoint(rotation.getAsJsonArray("origin"), dx, dy, dz);
+            }
+        }
+    }
+
+    private static void shiftOfficeChairPoint(@Nullable JsonArray point, float dx, float dy, float dz) {
+        if (point == null || point.size() < 3) {
+            return;
+        }
+        point.set(0, new com.google.gson.JsonPrimitive(point.get(0).getAsFloat() + dx));
+        point.set(1, new com.google.gson.JsonPrimitive(point.get(1).getAsFloat() + dy));
+        point.set(2, new com.google.gson.JsonPrimitive(point.get(2).getAsFloat() + dz));
+    }
+
+    private static @Nullable JsonObject officeChairModel(String path) {
+        var data = PFMAssets.readModel(Identifier.fromNamespaceAndPath(NS, path));
+        if (data == null) {
+            return null;
+        }
+
+        try {
+            return JsonParser.parseString(new String(data, StandardCharsets.UTF_8)).getAsJsonObject();
+        } catch (RuntimeException exception) {
+            PaladinsFurniturePatch.LOGGER.warn("Could not read the office chair model {}", path, exception);
+            return null;
+        }
     }
 
     private static @Nullable Identifier officeChairTexture(String name, String color) {
