@@ -53,6 +53,15 @@ public final class OfficeChairHitboxes {
     private static final Map<UUID, Hitbox> CHAIR_TO_HITBOX = new HashMap<>();
     private static final Map<UUID, UUID> HITBOX_TO_CHAIR = new HashMap<>();
 
+    /**
+     * Chairs waiting for their hitbox, by chair id and level. The load event cannot create the hitbox
+     * itself: it fires from {@code ServerLevel.EntityCallbacks.onTrackingStart}, which vanilla calls
+     * while streaming over the chunk's entities in {@code PersistentEntitySectionManager.updateChunkStatus}.
+     * Adding an entity there changes the list under the stream and throws a
+     * {@code ConcurrentModificationException}, so the spawn waits for the level tick instead.
+     */
+    private static final Map<UUID, ResourceKey<Level>> PENDING_SPAWNS = new HashMap<>();
+
     private static boolean resolved;
     private static @Nullable EntityDataAccessor<Float> widthAccessor;
     private static @Nullable EntityDataAccessor<Float> heightAccessor;
@@ -63,7 +72,7 @@ public final class OfficeChairHitboxes {
     public static void setup() {
         ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> {
             if (isChair(entity)) {
-                spawnHitbox(entity, world);
+                PENDING_SPAWNS.put(entity.getUUID(), world.dimension());
             }
         });
 
@@ -173,7 +182,29 @@ public final class OfficeChairHitboxes {
         }
     }
 
+    private static void spawnPending(ServerLevel world) {
+        if (PENDING_SPAWNS.isEmpty()) {
+            return;
+        }
+
+        for (Iterator<Map.Entry<UUID, ResourceKey<Level>>> iterator = PENDING_SPAWNS.entrySet().iterator();
+             iterator.hasNext(); ) {
+            var entry = iterator.next();
+            if (!entry.getValue().equals(world.dimension())) {
+                continue;
+            }
+            iterator.remove();
+
+            var chair = world.getEntity(entry.getKey());
+            if (chair != null && chair.isAlive()) {
+                spawnHitbox(chair, world);
+            }
+        }
+    }
+
     private static void tick(ServerLevel world) {
+        spawnPending(world);
+
         for (Iterator<Map.Entry<UUID, Hitbox>> iterator = CHAIR_TO_HITBOX.entrySet().iterator();
              iterator.hasNext(); ) {
             var entry = iterator.next();
@@ -237,5 +268,6 @@ public final class OfficeChairHitboxes {
     public static void clear() {
         CHAIR_TO_HITBOX.clear();
         HITBOX_TO_CHAIR.clear();
+        PENDING_SPAWNS.clear();
     }
 }

@@ -36,11 +36,13 @@ public final class PolyOfficeChair implements PolymerEntity {
     // The chair entity sits at seat height, so the model only needs lowering by the 0.05 by
     // which its own seat is above the rider's feet.
     private static final Vector3f CHAIR_OFFSET = new Vector3f(0f, -0.05f, 0f);
+    private static final int POS_ROT_INTERPOLATION_TICKS = 3;
 
     private static boolean resolved;
     private static @Nullable EntityDataAccessor<ItemStack> stackAccessor;
     private static @Nullable EntityDataAccessor<Byte> contextAccessor;
     private static @Nullable EntityDataAccessor<Vector3fc> translationAccessor;
+    private static @Nullable EntityDataAccessor<Integer> posRotInterpolationAccessor;
 
     private final Entity entity;
 
@@ -76,6 +78,13 @@ public final class PolyOfficeChair implements PolymerEntity {
         if (translationAccessor != null) {
             data.add(SynchedEntityData.DataValue.create(translationAccessor, (Vector3fc) CHAIR_OFFSET));
         }
+
+        // A display snaps to every position and rotation update unless it is given an interpolation
+        // duration. The chair is moved and turned every tick while ridden, so that snapping is felt
+        // as jitter. Three ticks is the span a normal entity is interpolated over.
+        if (posRotInterpolationAccessor != null) {
+            data.add(SynchedEntityData.DataValue.create(posRotInterpolationAccessor, POS_ROT_INTERPOLATION_TICKS));
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -98,6 +107,10 @@ public final class PolyOfficeChair implements PolymerEntity {
             var translation = Display.class.getDeclaredField("DATA_TRANSLATION_ID");
             translation.setAccessible(true);
             translationAccessor = (EntityDataAccessor<Vector3fc>) translation.get(null);
+
+            var posRot = Display.class.getDeclaredField("DATA_POS_ROT_INTERPOLATION_DURATION_ID");
+            posRot.setAccessible(true);
+            posRotInterpolationAccessor = (EntityDataAccessor<Integer>) posRot.get(null);
         } catch (ReflectiveOperationException | RuntimeException exception) {
             PaladinsFurniturePatch.LOGGER.warn("Could not read the item display's tracked data", exception);
         }

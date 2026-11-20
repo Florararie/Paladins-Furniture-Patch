@@ -392,7 +392,7 @@ public final class FurnitureShapes {
         // than a full panel, so the panel matcher below skips them and they would fall through to a
         // full invisible block; a trapdoor panel on the wall side is what they need.
         if (path.contains("towel") || path.contains("toilet_paper")) {
-            return wallPanel(state);
+            return wallPanel(target);
         }
 
         // An open sliding door slides into the neighbouring block, so its shape starts or ends
@@ -440,22 +440,20 @@ public final class FurnitureShapes {
      * so the limit is generous enough to cover them; the stand-in itself is the three pixel trapdoor
      * panel on that side.
      */
-    /** The three pixel trapdoor panel on the side of the block the wall is on. */
-    private static BlockState wallPanel(BlockState state) {
-        var facing = state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)
-                ? state.getValue(BlockStateProperties.HORIZONTAL_FACING)
-                : Direction.NORTH;
-
-        // A wall mounted piece's facing names the side it hangs on, not the side it looks at: a
-        // toilet paper roll facing south is on the south side of its block, so its panel is the one
-        // against that wall. The opposite mapping put the stand-in out in the room.
-        return switch (facing) {
-            case SOUTH -> panelHighZ;
-            case NORTH -> panelLowZ;
-            case EAST -> panelHighX;
-            case WEST -> panelLowX;
-            default -> panelHighZ;
-        };
+    /**
+     * The three pixel trapdoor panel against the wall a hanging piece is mounted on.
+     *
+     * <p>The facing property cannot be trusted here: PFM's wall pieces do not agree on what it
+     * means. A shower towel facing south hangs on the north side of its block, while a toilet paper
+     * roll facing south sits on the south side. Their collision shapes have no such ambiguity - each
+     * is thin in one direction and lies against the wall - so the panel is chosen from where the
+     * shape actually is. Choosing from the facing put shower towels out in the room.
+     */
+    private static BlockState wallPanel(AABB target) {
+        if (target.maxX - target.minX < target.maxZ - target.minZ) {
+            return target.minX + target.maxX < 1.0 ? panelLowX : panelHighX;
+        }
+        return target.minZ + target.maxZ < 1.0 ? panelLowZ : panelHighZ;
     }
 
     private static BlockState ladderStandIn(BlockState state) {

@@ -79,6 +79,7 @@ public final class PFMBlockStates {
     private static boolean indexed;
     private static List<Wood> woods;
     private static List<Material> materials;
+    private static Map<String, List<String>> TEXTURES_BY_NAME;
 
     private PFMBlockStates() {
     }
@@ -674,6 +675,18 @@ public final class PFMBlockStates {
     /** A model from the mod's jar, or the model a generated family name stands for. */
     private static @Nullable Identifier resolve(Block block, Identifier family) {
         index();
+
+        // A mirror's blockstate names one model type for both colours; only the frame texture
+        // differs. The gray block therefore has to be pointed at the gray model, which overrides
+        // that texture, or it is drawn with the white frame like an unpainted mirror.
+        if (BuiltInRegistries.BLOCK.getKey(block).getPath().equals("gray_mirror")
+                && family.getPath().contains("mirror")) {
+            var gray = Identifier.fromNamespaceAndPath(NS, "block/gray_mirror/gray_mirror");
+            if (TEMPLATES.containsKey(gray)) {
+                return gray;
+            }
+        }
+
         if (TEMPLATES.containsKey(family)) {
             return family;
         }
@@ -1085,8 +1098,105 @@ public final class PFMBlockStates {
             case "ancient_debris" -> "minecraft:block/ancient_debris_side";
             case "basalt" -> "minecraft:block/basalt_side";
             case "polished_basalt" -> "minecraft:block/polished_basalt_side";
-            default -> id.getNamespace() + ":block/" + id.getPath();
+            default -> {
+                if (id.getNamespace().equals("minecraft")) {
+                    yield "minecraft:block/" + id.getPath();
+                }
+
+                var direct = id.getNamespace() + ":block/" + id.getPath();
+                if (textureExists(direct)) {
+                    yield direct;
+                }
+
+                // Not every mod puts a block's sprite where its id suggests. tsa-stone registers
+                // tsa:limestone but ships the image as minecraft:block/custom/stone/limestone, so
+                // the sprite is looked up by name rather than by the path the id would imply.
+                yield textureNamed(id.getNamespace(), id.getPath(), direct);
+            }
         };
+    }
+
+    /**
+     * The sprite a mod actually ships for a block whose id does not name a texture path.
+     *
+     * <p>Names are collected once from every loaded mod's {@code textures/block} folder. A sprite in
+     * the block's own namespace wins, then one in {@code minecraft} - which is where mods that add
+     * vanilla styled blocks keep theirs - and only then another namespace's, shortest path first.
+     * The id the block's name implies is returned when nothing matches, so a missing sprite is still
+     * reported instead of silently drawing another mod's block.
+     */
+    private static String textureNamed(String namespace, String path, String fallback) {
+        var candidates = texturesByName().get(path);
+        if (candidates == null) {
+            return fallback;
+        }
+
+        String best = null;
+        int bestRank = Integer.MAX_VALUE;
+        int bestDepth = Integer.MAX_VALUE;
+        for (var candidate : candidates) {
+            var candidateNamespace = candidate.substring(0, candidate.indexOf(':'));
+            int rank = candidateNamespace.equals(namespace) ? 0
+                    : candidateNamespace.equals("minecraft") ? 1 : 2;
+            int depth = candidate.length() - candidate.replace("/", "").length();
+            if (rank < bestRank
+                    || (rank == bestRank && depth < bestDepth)
+                    || (rank == bestRank && depth == bestDepth && (best == null || candidate.compareTo(best) < 0))) {
+                best = candidate;
+                bestRank = rank;
+                bestDepth = depth;
+            }
+        }
+
+        return best == null ? fallback : best;
+    }
+
+    /** Every block sprite a loaded mod ships, by file name. */
+    private static Map<String, List<String>> texturesByName() {
+        if (TEXTURES_BY_NAME != null) {
+            return TEXTURES_BY_NAME;
+        }
+
+        var found = new HashMap<String, List<String>>();
+        for (var container : FabricLoader.getInstance().getAllMods()) {
+            for (var root : container.getRootPaths()) {
+                var assets = root.resolve("assets");
+                if (!Files.isDirectory(assets)) {
+                    continue;
+                }
+
+                try (var namespaces = Files.list(assets)) {
+                    for (var namespace : namespaces.filter(Files::isDirectory).toList()) {
+                        var textures = namespace.resolve("textures").resolve("block");
+                        if (!Files.isDirectory(textures)) {
+                            continue;
+                        }
+
+                        var name = namespace.getFileName().toString();
+                        try (var files = Files.walk(textures)) {
+                            for (var file : files.filter(Files::isRegularFile).toList()) {
+                                var fileName = file.getFileName().toString();
+                                if (!fileName.endsWith(".png")) {
+                                    continue;
+                                }
+
+                                var relative = textures.relativize(file).toString().replace('\\', '/');
+                                relative = relative.substring(0, relative.length() - ".png".length());
+                                found.computeIfAbsent(relative.substring(relative.lastIndexOf('/') + 1),
+                                                ignored -> new ArrayList<>())
+                                        .add(name + ":block/" + relative);
+                            }
+                        }
+                    }
+                } catch (IOException exception) {
+                    PaladinsFurniturePatch.LOGGER.debug("Could not list the textures of {}",
+                            container.getMetadata().getId(), exception);
+                }
+            }
+        }
+
+        TEXTURES_BY_NAME = found;
+        return found;
     }
 
     private record Wood(String token, Identifier planks, @Nullable Identifier log, @Nullable Identifier strippedLog) {
