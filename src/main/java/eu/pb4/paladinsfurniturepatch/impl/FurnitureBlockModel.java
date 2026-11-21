@@ -338,15 +338,7 @@ public class FurnitureBlockModel extends ElementHolder {
                         .rotateX((float) Math.toRadians(90));
 
                 // Where the item sits before any per-item adjustment.
-                var position = new Vector3f(0.2f, 0.08f - 0.5f, 0f);
-
-                // A sandwich is stood upright where every other item lies flat, and lifted off the
-                // plate by the offset PFM applies after that extra turn. That offset is defined in
-                // the item's own (post-turn) space, so it is rotated into place before being added.
-                if (standsUpright(element.getItem())) {
-                    rotation.rotateX((float) Math.toRadians(270));
-                    position.add(rotation.transform(new Vector3f(0f, 0.11f, 0.05f)));
-                }
+                var position = new Vector3f(0.18f, 0.08f - 0.5f, 0f);
 
                 // The rotation is passed as it is, without the half turn the other content displays
                 // are given: with it the item faced the wrong way round.
@@ -471,11 +463,6 @@ public class FurnitureBlockModel extends ElementHolder {
     /** The transform used by the existing content displays, whose entity yaw is the default. */
     private static Quaternionf itemSpace(Quaternionf rotation) {
         return new Quaternionf().rotateY((float) Math.PI).mul(rotation);
-    }
-
-    /** The one item PFM stands up on a plate instead of laying it flat. */
-    private static boolean standsUpright(ItemStack stack) {
-        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals("sandwichable:sandwich");
     }
 
     private void clearContent() {
