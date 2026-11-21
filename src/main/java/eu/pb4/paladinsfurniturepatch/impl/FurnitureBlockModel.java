@@ -337,12 +337,16 @@ public class FurnitureBlockModel extends ElementHolder {
                         .rotateY((float) Math.toRadians(-facing.toYRot()))
                         .rotateX((float) Math.toRadians(90));
 
-                // Where the item sits before any per-item adjustment.
-                var position = new Vector3f(0.18f, 0.08f - 0.5f, 0f);
+                // The GROUND context holds a flat item 2/16 of a block up, so that it stands on the
+                // ground rather than through it. Tipping the item flat turns that lift sideways, and
+                // it is the lift - not a fixed offset - that has to be taken back out: one fixed
+                // offset only lines up for whichever facing it was measured on and leaves the other
+                // three off centre by the full 2/16.
+                var lift = rotation.transform(new Vector3f(0f, -0.125f, 0f));
 
                 // The rotation is passed as it is, without the half turn the other content displays
                 // are given: with it the item faced the wrong way round.
-                element.setTranslation(position);
+                element.setTranslation(new Vector3f(lift.x, 0.08f - 0.5f, lift.z));
                 element.setLeftRotation(rotation);
                 element.startInterpolationIfDirty();
                 continue;
