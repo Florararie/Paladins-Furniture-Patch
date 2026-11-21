@@ -24,6 +24,7 @@ import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.level.Level;
 import org.joml.Quaternionf;
 
+import org.jspecify.annotations.Nullable;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -117,8 +118,8 @@ public final class FurnitureModels {
         return get(state, null, null);
     }
 
-    public static List<Part> get(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                 @org.jspecify.annotations.Nullable BlockPos pos) {
+    public static List<Part> get(BlockState state, @Nullable BlockGetter level,
+                                 @Nullable BlockPos pos) {
         var keys = select(state, level, pos);
         if (keys != null) {
             var rotation = ROTATIONS.getOrDefault(state, new Quaternionf());
@@ -251,9 +252,9 @@ public final class FurnitureModels {
      * being built. A part only draws an attached edge, so the standalone selection is the right
      * default for an unloaded block and the holder re-checks once it is attached.
      */
-    private static @org.jspecify.annotations.Nullable List<String> select(
-            BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-            @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static @Nullable List<String> select(
+            BlockState state, @Nullable BlockGetter level,
+            @Nullable BlockPos pos) {
         var family = PFMBlockStates.family(state.getBlock());
         if (family == null) {
             return null;
@@ -271,6 +272,7 @@ public final class FurnitureModels {
             case "iron_fridge" -> ironFridge(state, level, pos);
             case "freezer" -> freezer(state, level, pos);
             case "chair", "chair_classic", "chair_dinner", "chair_modern" -> chairs(state);
+            case "simple_stool", "classic_stool", "modern_stool", "log_stool" -> stools(state);
             case "desk_basic" -> basicDesk(state, level, pos);
             case "desk_cabinet_basic" -> deskCabinet(state, level, pos);
             case "table_basic" -> basicTable(state, level, pos, "bt");
@@ -290,8 +292,8 @@ public final class FurnitureModels {
         };
     }
 
-    private static List<String> bed(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                    @org.jspecify.annotations.Nullable BlockPos pos, boolean classic) {
+    private static List<String> bed(BlockState state, @Nullable BlockGetter level,
+                                    @Nullable BlockPos pos, boolean classic) {
         var prefix = classic ? "c" : "s";
         var keys = new ArrayList<String>(4);
         boolean head = state.hasProperty(BlockStateProperties.BED_PART)
@@ -357,8 +359,8 @@ public final class FurnitureModels {
                 || other.getValue(BlockStateProperties.HORIZONTAL_FACING) == state.getValue(BlockStateProperties.HORIZONTAL_FACING);
     }
 
-    private static List<String> lamp(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                     @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static List<String> lamp(BlockState state, @Nullable BlockGetter level,
+                                     @Nullable BlockPos pos) {
         boolean up = level != null && pos != null && level.getBlockState(pos.above()).getBlock() == state.getBlock();
         boolean down = level != null && pos != null && level.getBlockState(pos.below()).getBlock() == state.getBlock();
         boolean lit = state.hasProperty(BlockStateProperties.LIT) && state.getValue(BlockStateProperties.LIT);
@@ -381,8 +383,8 @@ public final class FurnitureModels {
         return keys;
     }
 
-    private static List<String> nightstand(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                           @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static List<String> nightstand(BlockState state, @Nullable BlockGetter level,
+                                           @Nullable BlockPos pos) {
         boolean open = state.hasProperty(BlockStateProperties.OPEN) && state.getValue(BlockStateProperties.OPEN);
         int offset = open ? 4 : 0;
 
@@ -417,8 +419,8 @@ public final class FurnitureModels {
                 || other.getValue(BlockStateProperties.HORIZONTAL_FACING) == state.getValue(BlockStateProperties.HORIZONTAL_FACING);
     }
 
-    private static List<String> cabinet(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                        @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static List<String> cabinet(BlockState state, @Nullable BlockGetter level,
+                                        @Nullable BlockPos pos) {
         boolean open = state.hasProperty(BlockStateProperties.OPEN) && state.getValue(BlockStateProperties.OPEN);
         int offset = open ? 5 : 0;
 
@@ -463,8 +465,8 @@ public final class FurnitureModels {
         return "kitchen_cabinet".equals(PFMBlockStates.family(other.getBlock()));
     }
 
-    private static List<String> drawer(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                       @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static List<String> drawer(BlockState state, @Nullable BlockGetter level,
+                                       @Nullable BlockPos pos) {
         boolean open = state.hasProperty(BlockStateProperties.OPEN) && state.getValue(BlockStateProperties.OPEN);
         int offset = open ? 7 : 0;
 
@@ -515,8 +517,8 @@ public final class FurnitureModels {
                 || state.getBlock() instanceof net.minecraft.world.level.block.AbstractCauldronBlock;
     }
 
-    private static List<String> oven(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                     @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static List<String> oven(BlockState state, @Nullable BlockGetter level,
+                                     @Nullable BlockPos pos) {
         boolean connected = false;
         if (level != null && pos != null) {
             connected = isOven(level.getBlockState(pos.above())) || isOven(level.getBlockState(pos.below()));
@@ -525,8 +527,8 @@ public final class FurnitureModels {
         return List.of("o" + ((open ? 2 : 0) + (connected ? 1 : 0)));
     }
 
-    private static List<String> kitchenCounter(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                               @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static List<String> kitchenCounter(BlockState state, @Nullable BlockGetter level,
+                                               @Nullable BlockPos pos) {
         if (level == null || pos == null || !state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
             return List.of("kc0");
         }
@@ -560,8 +562,8 @@ public final class FurnitureModels {
         return List.of("kc" + middleIndex(left, right));
     }
 
-    private static List<String> ironFridge(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                           @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static List<String> ironFridge(BlockState state, @Nullable BlockGetter level,
+                                           @Nullable BlockPos pos) {
         boolean bottom = level != null && pos != null && level.getBlockState(pos.above()).getBlock() == state.getBlock();
         boolean top = level != null && pos != null && level.getBlockState(pos.below()).getBlock() == state.getBlock();
         boolean freezerBelow = false;
@@ -600,8 +602,8 @@ public final class FurnitureModels {
         return !isCabinet(level.getBlockState(pos.relative(direction)));
     }
 
-    private static List<String> fridge(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                       @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static List<String> fridge(BlockState state, @Nullable BlockGetter level,
+                                       @Nullable BlockPos pos) {
         boolean bottom = level != null && pos != null && level.getBlockState(pos.above()).getBlock() == state.getBlock();
         boolean top = level != null && pos != null && level.getBlockState(pos.below()).getBlock() == state.getBlock();
         boolean freezerAbove = false;
@@ -630,8 +632,8 @@ public final class FurnitureModels {
         return List.of("f" + (offset + index));
     }
 
-    private static List<String> freezer(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                        @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static List<String> freezer(BlockState state, @Nullable BlockGetter level,
+                                        @Nullable BlockPos pos) {
         boolean fridgeBelow = false;
         if (level != null && pos != null) {
             fridgeBelow = BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos.below()).getBlock())
@@ -651,9 +653,9 @@ public final class FurnitureModels {
      * The wood a lamp block entity was built from, in PFM's own naming ({@code oak},
      * {@code umbral_cinderscapes}), or null if it cannot be read.
      */
-    private static @org.jspecify.annotations.Nullable String lampWood(
-            @org.jspecify.annotations.Nullable BlockGetter level,
-            @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static @Nullable String lampWood(
+            @Nullable BlockGetter level,
+            @Nullable BlockPos pos) {
         if (!(level instanceof Level world) || pos == null) {
             return null;
         }
@@ -687,9 +689,9 @@ public final class FurnitureModels {
         }
     }
 
-    private static @org.jspecify.annotations.Nullable String lampColor(
-            @org.jspecify.annotations.Nullable BlockGetter level,
-            @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static @Nullable String lampColor(
+            @Nullable BlockGetter level,
+            @Nullable BlockPos pos) {
         if (!(level instanceof Level world) || pos == null) {
             return null;
         }
@@ -712,6 +714,10 @@ public final class FurnitureModels {
 
     private static List<String> chairs(BlockState state) {
         return List.of(bool(state, "tucked") ? "ch1" : "ch0");
+    }
+
+    private static List<String> stools(BlockState state) {
+        return List.of(bool(state, "tucked") ? "st1" : "st0");
     }
 
 
@@ -757,8 +763,8 @@ public final class FurnitureModels {
         return "desk_cabinet_basic".equals(PFMBlockStates.family(other.getBlock()));
     }
 
-    private static List<String> basicTable(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                           @org.jspecify.annotations.Nullable BlockPos pos, String prefix) {
+    private static List<String> basicTable(BlockState state, @Nullable BlockGetter level,
+                                           @Nullable BlockPos pos, String prefix) {
         boolean north = level != null && pos != null && connects(level, pos, state, Direction.NORTH);
         boolean east = level != null && pos != null && connects(level, pos, state, Direction.EAST);
         boolean west = level != null && pos != null && connects(level, pos, state, Direction.WEST);
@@ -846,8 +852,8 @@ public final class FurnitureModels {
         return keys;
     }
 
-    private static List<String> classicTable(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                             @org.jspecify.annotations.Nullable BlockPos pos, String prefix) {
+    private static List<String> classicTable(BlockState state, @Nullable BlockGetter level,
+                                             @Nullable BlockPos pos, String prefix) {
         boolean north = level != null && pos != null && connects(level, pos, state, Direction.NORTH);
         boolean east = level != null && pos != null && connects(level, pos, state, Direction.EAST);
         boolean west = level != null && pos != null && connects(level, pos, state, Direction.WEST);
@@ -862,8 +868,8 @@ public final class FurnitureModels {
         return keys;
     }
 
-    private static List<String> sideTable(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                          @org.jspecify.annotations.Nullable BlockPos pos, String prefix) {
+    private static List<String> sideTable(BlockState state, @Nullable BlockGetter level,
+                                          @Nullable BlockPos pos, String prefix) {
         var keys = new ArrayList<String>();
         keys.add(prefix + "0");
         if (level == null || pos == null || !state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
@@ -894,8 +900,8 @@ public final class FurnitureModels {
                 == state.getValue(BlockStateProperties.HORIZONTAL_FACING);
     }
 
-    private static List<String> axisTable(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                          @org.jspecify.annotations.Nullable BlockPos pos, String prefix) {
+    private static List<String> axisTable(BlockState state, @Nullable BlockGetter level,
+                                          @Nullable BlockPos pos, String prefix) {
         var keys = new ArrayList<String>();
         keys.add(prefix + "0");
         if (level == null || pos == null || !state.hasProperty(BlockStateProperties.HORIZONTAL_AXIS)) {
@@ -924,8 +930,8 @@ public final class FurnitureModels {
      * A basic desk draws its top and each missing corner leg, exactly like the mod's own renderer.
      * The leg model indices are the mod's order: north-west, north-east, south-west, south-east.
      */
-    private static List<String> basicDesk(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                          @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static List<String> basicDesk(BlockState state, @Nullable BlockGetter level,
+                                          @Nullable BlockPos pos) {
         var keys = new ArrayList<String>();
         keys.add("db0");
         if (level == null || pos == null) {
@@ -944,8 +950,8 @@ public final class FurnitureModels {
         return keys;
     }
 
-    private static List<String> deskCabinet(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                            @org.jspecify.annotations.Nullable BlockPos pos) {
+    private static List<String> deskCabinet(BlockState state, @Nullable BlockGetter level,
+                                            @Nullable BlockPos pos) {
         boolean open = state.hasProperty(BlockStateProperties.OPEN) && state.getValue(BlockStateProperties.OPEN);
         int offset = open ? 8 : 0;
         var keys = new ArrayList<String>();
@@ -1050,8 +1056,8 @@ public final class FurnitureModels {
         if (!south && !east) keys.add("dc" + westLeg);
     }
 
-    private static List<String> wallCounterLike(BlockState state, @org.jspecify.annotations.Nullable BlockGetter level,
-                                                @org.jspecify.annotations.Nullable BlockPos pos,
+    private static List<String> wallCounterLike(BlockState state, @Nullable BlockGetter level,
+                                                @Nullable BlockPos pos,
                                                 String prefix, boolean openable) {
         boolean open = openable && state.hasProperty(BlockStateProperties.OPEN)
                 && state.getValue(BlockStateProperties.OPEN);

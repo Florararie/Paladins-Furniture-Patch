@@ -8,16 +8,23 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
+import java.util.Set;
+
 /**
- * Keeps PFM's custom sound events out of clientbound sound packets.
+ * Makes PFM's custom sounds playable by a vanilla client.
  *
  * <p>A vanilla client has no registry entry for {@code pfm:microwave_beep} or
- * {@code pfm:microwave_running}; receiving one makes the sound packet fail to decode and disconnects
- * the player. The microwave is the only furniture that plays these sounds while it runs, but the
- * substitution is applied to every PFM sound so a future block cannot reintroduce the same crash.
+ * {@code pfm:microwave_running}; sending the registry holder disconnects the player. The sound
+ * itself is a resource-pack asset, though - PFM ships its {@code sounds.json} and the ogg files, and
+ * both are already in the Polymer pack - so the holder is sent as a direct sound event with the same
+ * id instead. The client resolves that id through {@code sounds.json} and plays PFM's actual audio.
+ * Only the four sounds PFM ships are sent this way; anything else still falls back to a vanilla
+ * sound rather than risking an id the pack does not contain.
  */
 @Mixin(ServerLevel.class)
 public class SoundPacketMixin {
+    private static final Set<String> PACK_SOUNDS = Set.of(
+            "microwave_beep", "microwave_running", "toilet_flushing", "toilet_used");
     @ModifyVariable(
             method = "playSeededSound(Lnet/minecraft/world/entity/Entity;DDDLnet/minecraft/core/Holder;Lnet/minecraft/sounds/SoundSource;FFJ)V",
             at = @At("HEAD"),
@@ -32,10 +39,10 @@ public class SoundPacketMixin {
             return sound;
         }
 
-        return switch (id.getPath()) {
-            case "microwave_beep" -> SoundEvents.NOTE_BLOCK_PLING;
-            case "microwave_running" -> Holder.direct(SoundEvents.FURNACE_FIRE_CRACKLE);
-            default -> SoundEvents.UI_BUTTON_CLICK;
-        };
+        if (PACK_SOUNDS.contains(id.getPath())) {
+            return Holder.direct(SoundEvent.createVariableRangeEvent(id));
+        }
+
+        return SoundEvents.UI_BUTTON_CLICK;
     }
 }

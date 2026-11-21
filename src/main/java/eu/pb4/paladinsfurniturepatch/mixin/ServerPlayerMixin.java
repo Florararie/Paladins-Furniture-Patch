@@ -3,6 +3,7 @@ package eu.pb4.paladinsfurniturepatch.mixin;
 import com.llamalad7.mixinextras.sugar.Local;
 import eu.pb4.paladinsfurniturepatch.PaladinsFurniturePatch;
 import eu.pb4.paladinsfurniturepatch.impl.ui.FurnitureGui;
+import eu.pb4.paladinsfurniturepatch.impl.ui.WorkbenchGui;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.MenuProvider;
@@ -45,7 +46,24 @@ public class ServerPlayerMixin {
         boolean workbench = path.contains("workbench") || path.equals("furniture")
                 || menu.getClass().getSimpleName().toLowerCase().contains("workbench");
 
-        var gui = FurnitureGui.open(player, menu, path, workbench, provider.getDisplayName());
+        // The workbench is not a container with slots to display. It gets one anvil-style browser
+        // screen containing both the search field and the recipe grid, so Escape closes the whole
+        // workbench instead of returning to a second menu with a different slot list.
+        if (workbench) {
+            var gui = WorkbenchGui.open(player, menu, provider.getDisplayName());
+            if (gui == null) {
+                menu.removed(player);
+                callback.setReturnValue(OptionalInt.empty());
+                return;
+            }
+
+            PaladinsFurniturePatch.LOGGER.info("Opening {} for {} as a workbench browser",
+                    id, player.getScoreboardName());
+            callback.setReturnValue(OptionalInt.of(gui.getSyncId()));
+            return;
+        }
+
+        var gui = FurnitureGui.open(player, menu, path, provider.getDisplayName());
         if (gui == null) {
             // Nothing sensible to show; close what was created rather than send a menu type the
             // client cannot decode.

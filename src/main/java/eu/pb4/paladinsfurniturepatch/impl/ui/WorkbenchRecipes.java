@@ -1,20 +1,25 @@
 package eu.pb4.paladinsfurniturepatch.impl.ui;
 
 import eu.pb4.paladinsfurniturepatch.PaladinsFurniturePatch;
+import eu.pb4.paladinsfurniturepatch.impl.PFMGeneratedAssets;
 import eu.pb4.paladinsfurniturepatch.impl.item.PolyFurnitureItem;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemLore;
+import net.minecraft.world.item.crafting.Ingredient;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -40,33 +45,61 @@ final class WorkbenchRecipes {
     private static Method select;
     private static Method assemble;
     private static Method itemCounts;
+    private static Method output;
+    private static Method ingredients;
     private static Constructor<?> input;
 
     private WorkbenchRecipes() {
     }
 
-    /** How many recipes the workbench can show. */
-    static int count(AbstractContainerMenu menu) {
+    /**
+     * The recipe indices that match a search, in the workbench's own order.
+     *
+     * <p>Matching the output name is what makes the search useful for furniture, since the output
+     * is the piece the player is looking for. Ingredient names are matched too, so searching
+     * "planks" or "wool" finds the pieces that use them.
+     */
+    static List<Integer> indices(AbstractContainerMenu menu, String query) {
         var recipes = sorted(menu);
-        return recipes == null ? 0 : recipes.size();
+        if (recipes == null) {
+            return List.of();
+        }
+
+        var needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        var indices = new ArrayList<Integer>(recipes.size());
+        if (needle.isEmpty()) {
+            for (int i = 0; i < recipes.size(); i++) {
+                indices.add(i);
+            }
+            return indices;
+        }
+
+        for (int i = 0; i < recipes.size(); i++) {
+            if (matches(recipes.get(i), needle)) {
+                indices.add(i);
+            }
+        }
+        return indices;
     }
 
     /** The result items of a slice of those recipes, for the picker slots. */
-    static List<ItemStack> icons(AbstractContainerMenu menu, Player player, int from, int count) {
+    static List<ItemStack> icons(AbstractContainerMenu menu, Player player, List<Integer> indices,
+                                 int from, int count) {
         var recipes = sorted(menu);
-        if (recipes == null || from >= recipes.size()) {
+        if (recipes == null || from >= indices.size()) {
             return List.of();
         }
 
         var craftable = craftable(menu);
         var craftableSet = craftable == null ? new HashSet<>() : new HashSet<>(craftable);
 
-        int end = Math.min(recipes.size(), from + count);
+        int end = Math.min(indices.size(), from + count);
         var stacks = new ArrayList<ItemStack>(end - from);
         try {
             var recipeInput = input.newInstance(player.getInventory());
             for (int i = from; i < end; i++) {
-                var stack = (ItemStack) assemble.invoke(recipes.get(i), recipeInput);
+                var recipe = recipes.get(indices.get(i));
+                var stack = (ItemStack) assemble.invoke(recipe, recipeInput);
                 if (stack == null || stack.isEmpty()) {
                     stacks.add(ItemStack.EMPTY);
                     continue;
@@ -78,13 +111,11 @@ final class WorkbenchRecipes {
                 // The icon is sent as it is, without going through the item conversion, so a lamp
                 // needs its wood and colour model written onto the stack to show as a whole lamp.
                 PolyFurnitureItem.applyModel(icon);
-                if (!craftableSet.contains(recipes.get(i))) {
-                    // Neither a recipe viewer nor polydex can see these recipes: the mod keeps them
-                    // in its own list instead of the vanilla recipe manager. The list is the only
-                    // place a player can read what a piece of furniture is made of, so the tooltip
-                    // spells the materials out - required count, and how many they already have.
-                    icon.set(DataComponents.LORE, new ItemLore(requirements(recipes.get(i), player)));
-                }
+                // The material list belongs on every piece, not only the currently uncraftable
+                // ones. It is the only place the workbench explains why an item is grey or what a
+                // click will consume.
+                icon.set(DataComponents.LORE, new ItemLore(requirements(recipe, player,
+                        craftableSet.contains(recipe))));
                 // SGui sends its slots itself, so the icon is turned into the paper and model a
                 // client without the mod can draw instead of being left as the mod's item.
                 stacks.add(PolyFurnitureItem.toClientStack(icon));
@@ -97,16 +128,103 @@ final class WorkbenchRecipes {
     }
 
     /**
+     * Whether every word in the search appears in the output name, item id, or an ingredient.
+     *
+     * <p>The item id is part of the haystack because PFM's names are generated at runtime: on a
+     * dedicated server the translated name can still be the raw {@code block.pfm.*} key, while the
+     * registry path is always the useful {@code oak_simple_stool}. Without it, searching for
+     * "Simple Stool" found nothing even though the recipe existed.
+     */
+    private static boolean matches(Object recipe, String query) {
+        resolve();
+        var haystack = new StringBuilder();
+        try {
+            if (output != null) {
+                appendName(haystack, (ItemStack) output.invoke(recipe));
+            }
+            if (ingredients != null) {
+                var list = (List<?>) ingredients.invoke(recipe);
+                if (list != null) {
+                    for (var ingredient : list) {
+                        for (var holder : ((Ingredient) ingredient).items().toList()) {
+                            appendName(haystack, new ItemStack((Item) holder.value()));
+                        }
+                    }
+                }
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // A recipe from another PFM version that cannot answer still remains in the list.
+        }
+
+        var text = haystack.toString();
+        for (var word : query.split("\\s+")) {
+            if (!word.isEmpty() && !text.contains(word)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static void appendName(StringBuilder haystack, ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+
+        haystack.append(' ').append(stack.getHoverName().getString().toLowerCase(Locale.ROOT));
+        haystack.append(' ').append(stack.getItem().getDescriptionId().replace('_', ' ').toLowerCase(Locale.ROOT));
+        var id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        haystack.append(' ').append(id.getPath().replace('_', ' ').toLowerCase(Locale.ROOT));
+
+        // The name the player actually reads. PFM renames several families, so a wall drawer is a
+        // "Kitchen Cabinet" and a wall counter a "Kitchen Filler Cabinet" even though neither word
+        // is in their registry path. Without this, searching "filler" found nothing at all.
+        var generated = PFMGeneratedAssets.searchName(stack.getItem());
+        if (generated != null) {
+            haystack.append(' ').append(generated.toLowerCase(Locale.ROOT));
+        }
+    }
+
+    /** Whether a recipe is currently in the workbench's craftable list. */
+    static boolean canCraft(AbstractContainerMenu menu, int index) {
+        var recipes = sorted(menu);
+        var available = craftable(menu);
+        return recipes != null && available != null && index >= 0 && index < recipes.size()
+                && available.contains(recipes.get(index));
+    }
+
+    /**
+     * Selects a recipe and moves its result straight into the player's inventory.
+     *
+     * <p>The workbench's result slot still owns the ingredient consumption, so this goes through the
+     * menu instead of assembling and shrinking stacks here. quickMoveStack indexes the result slot
+     * first, as the mod's own menu does, and its onTake path removes the materials.
+     */
+    static ItemStack craft(AbstractContainerMenu menu, Player player, int index) {
+        if (!select(menu, player, index)) {
+            return ItemStack.EMPTY;
+        }
+
+        try {
+            return menu.quickMoveStack(player, 0);
+        } catch (RuntimeException exception) {
+            PaladinsFurniturePatch.LOGGER.warn("Could not move a crafted workbench result", exception);
+            return ItemStack.EMPTY;
+        }
+    }
+
+    /**
      * The materials a recipe still needs, one line each, red while the player is short of them.
      *
      * <p>{@code getItemCounts} is a default method on the mod's recipe interface, so it answers for
      * both the simple and the dynamic recipes the workbench collects.
      */
-    private static List<Component> requirements(Object recipe, Player player) {
+    private static List<Component> requirements(Object recipe, Player player, boolean craftable) {
         var lines = new ArrayList<Component>();
+        lines.add(Component.literal(craftable ? "Click to craft" : "Missing materials")
+                .withStyle(craftable ? ChatFormatting.GREEN : ChatFormatting.RED));
+
         var needed = counts(recipe);
         if (needed.isEmpty()) {
-            lines.add(Component.literal("Missing materials").withStyle(ChatFormatting.RED));
             return lines;
         }
 
@@ -131,14 +249,14 @@ final class WorkbenchRecipes {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<net.minecraft.world.item.Item, Integer> counts(Object recipe) {
+    private static Map<Item, Integer> counts(Object recipe) {
         resolve();
         if (itemCounts == null) {
             return Map.of();
         }
 
         try {
-            var counts = (Map<net.minecraft.world.item.Item, Integer>) itemCounts.invoke(recipe);
+            var counts = (Map<Item, Integer>) itemCounts.invoke(recipe);
             return counts == null ? Map.of() : counts;
         } catch (ReflectiveOperationException | RuntimeException exception) {
             return Map.of();
@@ -202,6 +320,8 @@ final class WorkbenchRecipes {
             select = menu.getMethod("clickMenuButton", Player.class, int.class);
             assemble = recipe.getMethod("assemble", recipeInput);
             itemCounts = recipe.getMethod("getItemCounts");
+            output = recipe.getMethod("getRecipeOuput");
+            ingredients = recipe.getMethod("getIngredients");
             input = recipeInput.getConstructor(net.minecraft.world.entity.player.Inventory.class);
         } catch (ReflectiveOperationException | RuntimeException exception) {
             PaladinsFurniturePatch.LOGGER.warn("Could not find the workbench recipe methods", exception);

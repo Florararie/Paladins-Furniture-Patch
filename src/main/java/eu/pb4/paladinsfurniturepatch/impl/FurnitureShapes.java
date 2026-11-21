@@ -14,6 +14,7 @@ import eu.pb4.paladinsfurniturepatch.PaladinsFurniturePatch;
 import net.fabricmc.fabric.api.networking.v1.context.PacketContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -25,6 +26,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
+import org.jspecify.annotations.Nullable;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -131,10 +133,6 @@ public final class FurnitureShapes {
         add("panel high z", panelHighZ = reserve(BlockModelType.TRAPDOOR_NORTH));
         add("panel low x", panelLowX = reserve(BlockModelType.TRAPDOOR_EAST));
         add("panel high x", panelHighX = reserve(BlockModelType.TRAPDOOR_WEST));
-
-        // Half blocks, for beds, cushions, end tables and coffee chairs.
-        add("half block", reserve(BlockModelType.SLAB_BOTTOM));
-        add("upper half block", reserve(BlockModelType.SLAB_TOP));
 
         // Teddy bears and other small props only need a small footprint; nothing here may be a
         // player head, because a skull the client does not have hidden renders as Steve.
@@ -339,6 +337,149 @@ public final class FurnitureShapes {
                 hidden, byBlock.size());
     }
 
+    /**
+     * A vanilla state whose sprite and sound are used for breaking this furniture.
+     *
+     * <p>The client is never sent the real PFM block, so the break event state is the only thing it
+     * can use for both the particle texture and the break sound. Returning oak planks for everything
+     * made every piece of furniture splinter into oak and sound like a plank; this picks the closest
+     * vanilla material from the block id instead.
+     */
+    public static BlockState breakState(BlockState state) {
+        return breakBlock(BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath()).defaultBlockState();
+    }
+
+    private static Block breakBlock(String path) {
+        if (hasToken(path, "dark_oak")) {
+            return Blocks.DARK_OAK_PLANKS;
+        }
+        if (hasToken(path, "pale_oak")) {
+            return Blocks.PALE_OAK_PLANKS;
+        }
+        if (hasToken(path, "spruce")) {
+            return Blocks.SPRUCE_PLANKS;
+        }
+        if (hasToken(path, "birch")) {
+            return Blocks.BIRCH_PLANKS;
+        }
+        if (hasToken(path, "jungle")) {
+            return Blocks.JUNGLE_PLANKS;
+        }
+        if (hasToken(path, "acacia")) {
+            return Blocks.ACACIA_PLANKS;
+        }
+        if (hasToken(path, "mangrove")) {
+            return Blocks.MANGROVE_PLANKS;
+        }
+        if (hasToken(path, "cherry")) {
+            return Blocks.CHERRY_PLANKS;
+        }
+        if (hasToken(path, "bamboo")) {
+            return Blocks.BAMBOO_PLANKS;
+        }
+        if (hasToken(path, "crimson")) {
+            return Blocks.CRIMSON_PLANKS;
+        }
+        if (hasToken(path, "warped")) {
+            return Blocks.WARPED_PLANKS;
+        }
+        if (hasToken(path, "oak")) {
+            return Blocks.OAK_PLANKS;
+        }
+
+        if (path.contains("glass") || path.contains("mirror") || path.contains("window")) {
+            return Blocks.GLASS;
+        }
+        if (path.contains("bed") || path.contains("sofa") || path.contains("arm_chair")
+                || path.contains("cushion")) {
+            for (var color : DyeColor.values()) {
+                if (path.startsWith(color.getSerializedName() + "_")) {
+                    return wool(color);
+                }
+            }
+            return Blocks.WHITE_WOOL;
+        }
+        if (path.contains("fridge") || path.contains("freezer") || path.contains("oven")
+                || path.contains("stove") || path.contains("microwave") || path.contains("toaster")) {
+            return Blocks.IRON_BLOCK;
+        }
+        if (path.contains("toilet") || path.contains("sink") || path.contains("bathtub")
+                || path.contains("shower")) {
+            return Blocks.WHITE_TERRACOTTA;
+        }
+        if (path.contains("lamp")) {
+            return Blocks.GLOWSTONE;
+        }
+        if (hasToken(path, "deepslate")) {
+            return Blocks.DEEPSLATE;
+        }
+        if (hasToken(path, "blackstone")) {
+            return Blocks.BLACKSTONE;
+        }
+        if (hasToken(path, "granite")) {
+            return Blocks.GRANITE;
+        }
+        if (hasToken(path, "diorite")) {
+            return Blocks.DIORITE;
+        }
+        if (hasToken(path, "andesite")) {
+            return Blocks.ANDESITE;
+        }
+        if (hasToken(path, "tuff")) {
+            return Blocks.TUFF;
+        }
+        if (hasToken(path, "calcite")) {
+            return Blocks.CALCITE;
+        }
+        if (hasToken(path, "quartz")) {
+            return Blocks.QUARTZ_BLOCK;
+        }
+        if (hasToken(path, "stone")) {
+            return Blocks.STONE;
+        }
+
+        // Plates and other unclassified pieces read as ceramic or stone rather than as wood.
+        if (path.contains("plate")) {
+            return Blocks.STONE;
+        }
+        return Blocks.OAK_PLANKS;
+    }
+
+    private static boolean hasToken(String path, String token) {
+        int index = path.indexOf(token);
+        while (index >= 0) {
+            int end = index + token.length();
+            boolean before = index == 0 || path.charAt(index - 1) == '_';
+            boolean after = end == path.length() || path.charAt(end) == '_';
+            if (before && after) {
+                return true;
+            }
+            index = path.indexOf(token, index + 1);
+        }
+        return false;
+    }
+
+    private static Block wool(DyeColor color) {
+        return switch (color) {
+            case WHITE -> Blocks.WHITE_WOOL;
+            case ORANGE -> Blocks.ORANGE_WOOL;
+            case MAGENTA -> Blocks.MAGENTA_WOOL;
+            case LIGHT_BLUE -> Blocks.LIGHT_BLUE_WOOL;
+            case YELLOW -> Blocks.YELLOW_WOOL;
+            case LIME -> Blocks.LIME_WOOL;
+            case PINK -> Blocks.PINK_WOOL;
+            case GRAY -> Blocks.GRAY_WOOL;
+            case LIGHT_GRAY -> Blocks.LIGHT_GRAY_WOOL;
+            case CYAN -> Blocks.CYAN_WOOL;
+            case PURPLE -> Blocks.PURPLE_WOOL;
+            case BLUE -> Blocks.BLUE_WOOL;
+            case BROWN -> Blocks.BROWN_WOOL;
+            case GREEN -> Blocks.GREEN_WOOL;
+            case RED -> Blocks.RED_WOOL;
+            case BLACK -> Blocks.BLACK_WOOL;
+        };
+    }
+
     public static BlockState standIn(BlockState state) {
         if (!ready) {
             return Blocks.BARRIER.defaultBlockState();
@@ -364,6 +505,14 @@ public final class FurnitureShapes {
         }
 
         var target = shape.bounds();
+
+        // Coffee tables are meant to be stepped onto and walked around like a low table. A slab
+        // looked like the obvious stand-in, but its full top face culls the face of the block below
+        // it; because the slab's model is hidden, that shows up as a hole in the floor. A campfire
+        // is the same kind of low plate without that culling, so it is the safer fit.
+        if (path.contains("coffee_table")) {
+            return campfire;
+        }
 
         // Desk lamps are a small box in the middle of the block with nothing worth keeping solid,
         // and an invisible box you bump into over a lamp is worse than walking through it. Ceiling
@@ -467,7 +616,7 @@ public final class FurnitureShapes {
                 .setValue(CaveVines.BERRIES, false);
     }
 
-    private static @org.jspecify.annotations.Nullable BlockState panel(AABB target) {
+    private static @Nullable BlockState panel(AABB target) {
         double widthX = (target.maxX - target.minX) * 16;
         double widthY = (target.maxY - target.minY) * 16;
         double widthZ = (target.maxZ - target.minZ) * 16;

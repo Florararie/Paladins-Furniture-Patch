@@ -2,6 +2,8 @@ package eu.pb4.paladinsfurniturepatch.impl;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import eu.pb4.paladinsfurniturepatch.PaladinsFurniturePatch;
@@ -19,7 +21,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Random;
+import java.util.ArrayList;
 
 /**
  * Paladin's Furniture's assets, which come from three places.
@@ -57,6 +59,23 @@ public final class PFMAssets {
      */
     private static final String WATER_TEXTURE_ID = PaladinsFurniturePatch.MOD_ID + ":block/water";
     private static final String WATER_TEXTURE_PATH = "assets/" + PaladinsFurniturePatch.MOD_ID + "/textures/block/water.png";
+    /**
+     * Used-toilet water has its own model and texture names on purpose. Reusing a dirty path from
+     * an earlier build let a client keep serving the old blue texture even after the pack changed;
+     * a new path makes the used model a genuinely new resource.
+     */
+    private static final String USED_WATER_TEXTURE_ID = PaladinsFurniturePatch.MOD_ID + ":block/used_toilet_water";
+    private static final String USED_WATER_TEXTURE_PATH =
+            "assets/" + PaladinsFurniturePatch.MOD_ID + "/textures/block/used_toilet_water.png";
+    private static final String TOILET_BLOCKSTATE_PATH = "assets/pfm/blockstates/basic_toilet.json";
+    private static final String TOILET_STILL_MODEL = "block/basic_toilet/basic_toilet_still_water";
+    private static final String TOILET_FLOWING_MODEL = "block/basic_toilet/basic_toilet_flowing_water";
+    private static final String TOILET_USED_STILL_MODEL = "block/basic_toilet/basic_toilet_used_water";
+    private static final String TOILET_USED_FLOWING_MODEL =
+            "block/basic_toilet/basic_toilet_used_flowing_water";
+    private static final int WATER_FRAMES = 32;
+    private static final byte[] WATER_ANIMATION =
+            "{\"animation\":{\"frametime\":2}}".getBytes(StandardCharsets.UTF_8);
 
     private PFMAssets() {
     }
@@ -102,11 +121,6 @@ public final class PFMAssets {
                     PaladinsFurniturePatch.LOGGER.warn("Could not read {}", file, exception);
                 }
             }
-        }
-
-        var container = FabricLoader.getInstance().getModContainer(PaladinsFurniturePatch.MOD_ID).orElse(null);
-        if (container == null) {
-            return null;
         }
 
         var mod = FabricLoader.getInstance().getModContainer(PaladinsFurniturePatch.TARGET_MOD_ID).orElse(null);
@@ -234,12 +248,13 @@ public final class PFMAssets {
      * them; the replacement texture has no tint index left for a client to tint it again.
      */
     private static void colourWater(ResourcePackBuilder builder) {
-        var water = waterTexture();
-        if (water.length == 0) {
+        var water = waterTexture(false);
+        var dirtyWater = waterTexture(true);
+        if (water.length == 0 || dirtyWater.length == 0) {
             return;
         }
 
-        var rewrites = new java.util.ArrayList<String>();
+        var rewrites = new ArrayList<String>();
         builder.forEachResource((path, resource) -> {
             if (!path.startsWith("assets/" + PaladinsFurniturePatch.TARGET_MOD_ID + "/models/")
                     || !path.endsWith(".json")) {
@@ -259,10 +274,138 @@ public final class PFMAssets {
 
         // Only our own copy of the texture: it is what the rewritten models name. Writing the
         // tinted texture into minecraft's namespace would recolour every ocean in the world.
-        builder.addData(WATER_TEXTURE_PATH, water);
-        builder.addData("assets/" + PaladinsFurniturePatch.TARGET_MOD_ID + "/textures/block/water_still.png", water);
-        builder.addData("assets/" + PaladinsFurniturePatch.TARGET_MOD_ID + "/textures/block/water_flow.png", water);
-        PaladinsFurniturePatch.LOGGER.info("Coloured the furniture water surfaces blue ({} models)", rewrites.size());
+        // The texture is a vertical animation strip; the mcmeta is what makes the client cycle
+        // through the frames instead of showing the first one as a still image.
+        addAnimated(builder, WATER_TEXTURE_PATH, water);
+        // Used water is the same animation in brown, so it keeps the clean surface's translucency
+        // and motion instead of turning into a flat brown lid.
+        addAnimated(builder, USED_WATER_TEXTURE_PATH, dirtyWater);
+        // The mod's own still and flow textures, which its jar models name before the rewrite.
+        addAnimated(builder, "assets/" + PaladinsFurniturePatch.TARGET_MOD_ID + "/textures/block/water_still.png", water);
+        addAnimated(builder, "assets/" + PaladinsFurniturePatch.TARGET_MOD_ID + "/textures/block/water_flow.png", water);
+
+        // A dirty toilet uses the same water geometry as a clean one, but needs a different
+        // texture; the blockstate has separate dirty and flushing models, so those model names are
+        // pointed at brown copies while the clean states keep the blue surface.
+        writeDirtyToilet(builder);
+
+        PaladinsFurniturePatch.LOGGER.info("Coloured the furniture water surfaces blue and animated them ({} models)",
+                rewrites.size());
+    }
+
+    /** A vertical animation strip plus the {@code .mcmeta} that makes the client cycle its frames. */
+    private static void addAnimated(ResourcePackBuilder builder, String path, byte[] data) {
+        builder.addData(path, data);
+        builder.addData(path + ".mcmeta", WATER_ANIMATION);
+    }
+
+    private static void writeDirtyToilet(ResourcePackBuilder builder) {
+        var still = readModel(Identifier.fromNamespaceAndPath(PaladinsFurniturePatch.TARGET_MOD_ID,
+                TOILET_STILL_MODEL));
+        var flowing = readModel(Identifier.fromNamespaceAndPath(PaladinsFurniturePatch.TARGET_MOD_ID,
+                TOILET_FLOWING_MODEL));
+        if (still == null || flowing == null) {
+            PaladinsFurniturePatch.LOGGER.warn("Could not find the toilet water models; keeping blue toilet water");
+            return;
+        }
+
+        builder.addData("assets/" + PaladinsFurniturePatch.TARGET_MOD_ID + "/models/"
+                + TOILET_USED_STILL_MODEL + ".json", dirtyModel(still));
+        builder.addData("assets/" + PaladinsFurniturePatch.TARGET_MOD_ID + "/models/"
+                + TOILET_USED_FLOWING_MODEL + ".json", dirtyModel(flowing));
+
+        var data = builder.getDataOrSource(TOILET_BLOCKSTATE_PATH);
+        if (data == null) {
+            data = readBlockState(Identifier.fromNamespaceAndPath(PaladinsFurniturePatch.TARGET_MOD_ID, "basic_toilet"));
+        }
+        if (data == null) {
+            PaladinsFurniturePatch.LOGGER.warn("Could not find the toilet blockstate; dirty water will stay blue");
+            return;
+        }
+
+        try {
+            var root = JsonParser.parseString(new String(data, StandardCharsets.UTF_8)).getAsJsonObject();
+            useDirtyToiletModels(root);
+            builder.addData(TOILET_BLOCKSTATE_PATH, GSON.toJson(root).getBytes(StandardCharsets.UTF_8));
+        } catch (RuntimeException exception) {
+            PaladinsFurniturePatch.LOGGER.warn("Could not rewrite the toilet blockstate", exception);
+        }
+    }
+
+    /**
+     * Points a toilet's dirty and flushing states at the brown water models.
+     *
+     * <p>Two readers need this. The client gets it in the finished pack, and the patch itself reads
+     * the same blockstate to decide which model each state draws on the server, because furniture is
+     * drawn by display elements instead of the client's block renderer. Only rewriting the pack left
+     * the server still naming the blue model, so a used toilet kept its blue surface.
+     */
+    static void useDirtyToiletModels(JsonObject root) {
+        var multipart = root.getAsJsonArray("multipart");
+        if (multipart == null) {
+            return;
+        }
+
+        for (var element : multipart) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+
+            var part = element.getAsJsonObject();
+            var state = toiletState(part.get("when"));
+            if (!"dirty".equals(state) && !"flushing".equals(state)) {
+                continue;
+            }
+
+            var apply = part.getAsJsonObject("apply");
+            if (apply == null || !apply.has("model")) {
+                continue;
+            }
+
+            var model = apply.get("model").getAsString();
+            if (model.equals("pfm:" + TOILET_STILL_MODEL)) {
+                apply.addProperty("model", "pfm:" + TOILET_USED_STILL_MODEL);
+            } else if (model.equals("pfm:" + TOILET_FLOWING_MODEL)) {
+                apply.addProperty("model", "pfm:" + TOILET_USED_FLOWING_MODEL);
+            }
+        }
+    }
+
+    private static String toiletState(JsonElement when) {
+        if (when == null) {
+            return "";
+        }
+        if (when.isJsonArray()) {
+            for (var child : when.getAsJsonArray()) {
+                var state = toiletState(child);
+                if (!state.isEmpty()) {
+                    return state;
+                }
+            }
+            return "";
+        }
+        if (!when.isJsonObject()) {
+            return "";
+        }
+        var object = when.getAsJsonObject();
+        if (object.has("toilet") && object.get("toilet").isJsonPrimitive()) {
+            return object.get("toilet").getAsString();
+        }
+        for (var entry : object.entrySet()) {
+            var state = toiletState(entry.getValue());
+            if (!state.isEmpty()) {
+                return state;
+            }
+        }
+        return "";
+    }
+
+    private static byte[] dirtyModel(byte[] original) {
+        return new String(original, StandardCharsets.UTF_8)
+                .replace("\"block/water_still\"", "\"" + USED_WATER_TEXTURE_ID + "\"")
+                .replace("\"block/water_flow\"", "\"" + USED_WATER_TEXTURE_ID + "\"")
+                .replaceAll(",\\s*\"tintindex\"\\s*:\\s*-?\\d+", "")
+                .getBytes(StandardCharsets.UTF_8);
     }
 
     /** Points a model's water faces at the pre-tinted texture, or returns it unchanged. */
@@ -279,25 +422,32 @@ public final class PFMAssets {
     }
 
     /**
-     * A 16 by 16 still water texture in vanilla's water colour.
+     * A 32-frame animated water texture in vanilla's water colour.
      *
      * <p>It is translucent on purpose. The mod draws its water with an opaque grayscale texture and
      * lets the biome tint colour it; a pre-tinted opaque copy looks like a slab of blue plastic, which
      * is what the sink, the bathtub and the toilet showed. Vanilla water is roughly half transparent,
-     * so the basin underneath shows through and the surface reads as water.
+     * so the basin underneath shows through and the surface reads as water. The frames move a subtle
+     * sine wave across the tile, so the surface in the basin is no longer a frozen blue square.
+     *
+     * <p>The dirty variant is the same strip in brown rather than a separate flat tile, so used
+     * toilet water keeps the transparency and the animation of the clean surface.
      */
-    private static byte[] waterTexture() {
-        var image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
-        var random = new Random(71L);
-        for (int y = 0; y < 16; y++) {
-            for (int x = 0; x < 16; x++) {
-                int shade = random.nextInt(17) - 8;
-                int red = clamp(56 + shade);
-                int green = clamp(108 + shade);
-                int blue = clamp(214 + shade / 2);
-                // Slightly denser in the middle of the tile, so the surface is not a flat wash.
-                int alpha = clamp(120 + shade * 2 + (random.nextInt(11) - 5));
-                image.setRGB(x, y, alpha << 24 | red << 16 | green << 8 | blue);
+    private static byte[] waterTexture(boolean dirty) {
+        var image = new BufferedImage(16, 16 * WATER_FRAMES, BufferedImage.TYPE_INT_ARGB);
+        for (int frame = 0; frame < WATER_FRAMES; frame++) {
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) {
+                    double wave = Math.sin((x + frame * 0.55) * 0.62)
+                            + Math.cos((y - frame * 0.42) * 0.51);
+                    int shade = (int) Math.round(wave * 7.0);
+                    int glint = ((x + y * 3 + frame * 2) % 17 == 0) ? 12 : 0;
+                    int red = clamp((dirty ? 112 : 42) + shade / 2 + glint / 4);
+                    int green = clamp((dirty ? 72 : 104) + shade + glint / 2);
+                    int blue = clamp((dirty ? 32 : 210) + shade / 2 + glint / 2);
+                    int alpha = clamp(130 + shade * 2);
+                    image.setRGB(x, frame * 16 + y, alpha << 24 | red << 16 | green << 8 | blue);
+                }
             }
         }
 
@@ -306,7 +456,7 @@ public final class PFMAssets {
             ImageIO.write(image, "PNG", out);
             return out.toByteArray();
         } catch (IOException exception) {
-            PaladinsFurniturePatch.LOGGER.warn("Could not build the water texture", exception);
+            PaladinsFurniturePatch.LOGGER.warn("Could not build the clean water texture", exception);
             return new byte[0];
         }
     }

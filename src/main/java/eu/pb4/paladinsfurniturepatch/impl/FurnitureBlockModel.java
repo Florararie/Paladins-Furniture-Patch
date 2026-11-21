@@ -309,12 +309,6 @@ public class FurnitureBlockModel extends ElementHolder {
             element.setItemDisplayContext(kind.equals("microwave") || kind.equals("plate") || kind.equals("toaster")
                     ? ItemDisplayContext.GROUND
                     : ItemDisplayContext.FIXED);
-            if (kind.equals("plate")) {
-                // PFM's block renderer is in block space; a virtual display entity has its own yaw.
-                // The other content transforms were tuned against this entity's default yaw, but the
-                // plate uses PFM's renderer order and needs the static-part yaw to line up.
-                element.setYaw(180);
-            }
             element.setViewRange(2f);
             element.setDisplaySize(1f, 1f);
             element.setTeleportDuration(0);
@@ -334,17 +328,30 @@ public class FurnitureBlockModel extends ElementHolder {
             var element = entry.getValue();
 
             if (kind.equals("plate")) {
-                // PFM: Y by -toYRot, then X by 90. The display entity adds its own Y180 (and the
-                // item renderer another Y180), so the rotation is conjugated and the entity itself
-                // carries the yaw. The item sits at the visual centre of the plate rather than the
-                // old renderer's off-centre translation.
+                // PFM: turn to the plate's facing, then tip the item flat above the block floor.
+                // Its renderer also slides the item a sixth of a block towards one edge of the
+                // block, but that is the plate's least centred point, not its middle: the plate
+                // model is centred in the block, so the item is kept near the block centre.
+                // PFM does not scale the item either - the GROUND context already carries its own scale.
                 var rotation = new Quaternionf()
                         .rotateY((float) Math.toRadians(-facing.toYRot()))
                         .rotateX((float) Math.toRadians(90));
-                // PFM does not add a second scale here: the GROUND item context already carries
-                // the item's display scale. Scaling by 0.375 as well made the item far too small.
-                element.setTranslation(new Vector3f(0f, -0.42f, -0.20f));
-                element.setLeftRotation(plateItemSpace(rotation));
+
+                // Where the item sits before any per-item adjustment.
+                var position = new Vector3f(0.2f, 0.08f - 0.5f, 0f);
+
+                // A sandwich is stood upright where every other item lies flat, and lifted off the
+                // plate by the offset PFM applies after that extra turn. That offset is defined in
+                // the item's own (post-turn) space, so it is rotated into place before being added.
+                if (standsUpright(element.getItem())) {
+                    rotation.rotateX((float) Math.toRadians(270));
+                    position.add(rotation.transform(new Vector3f(0f, 0.11f, 0.05f)));
+                }
+
+                // The rotation is passed as it is, without the half turn the other content displays
+                // are given: with it the item faced the wrong way round.
+                element.setTranslation(position);
+                element.setLeftRotation(rotation);
                 element.startInterpolationIfDirty();
                 continue;
             }
@@ -466,12 +473,9 @@ public class FurnitureBlockModel extends ElementHolder {
         return new Quaternionf().rotateY((float) Math.PI).mul(rotation);
     }
 
-    /**
-     * Plate content uses the same entity yaw as the static furniture. The item renderer adds another
-     * Y180 before drawing, so a block-renderer rotation has to be conjugated by Y180 as well.
-     */
-    private static Quaternionf plateItemSpace(Quaternionf rotation) {
-        return new Quaternionf().rotateY((float) Math.PI).mul(rotation).rotateY((float) Math.PI);
+    /** The one item PFM stands up on a plate instead of laying it flat. */
+    private static boolean standsUpright(ItemStack stack) {
+        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals("sandwichable:sandwich");
     }
 
     private void clearContent() {

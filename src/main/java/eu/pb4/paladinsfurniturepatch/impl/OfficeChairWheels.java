@@ -39,8 +39,8 @@ final class OfficeChairWheels extends ElementHolder {
             {-0.0359375f, -0.3578125f}
     };
 
-    /** The chair model's own translation of -0.05, plus a caster centre half a block down. */
-    private static final double WHEEL_Y = -0.4875;
+    /** The chair model's own translation of -0.25, plus a caster centre half a block down. */
+    private static final double WHEEL_Y = -0.6875;
 
     private static final int TELEPORT_DURATION = 3;
 

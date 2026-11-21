@@ -41,7 +41,8 @@ public final class FurnitureBlockOverlay implements PolymerBlock, BlockWithEleme
 
     @Override
     public BlockState getPolymerBreakEventBlockState(BlockState state, PacketContext context) {
-        // Only used for the breaking particles, which have to come from a block the client knows.
-        return Blocks.OAK_PLANKS.defaultBlockState();
+        // Used for both the breaking particles and the break sound, so it has to match the
+        // furniture's material rather than always being oak.
+        return FurnitureShapes.breakState(state);
     }
 }

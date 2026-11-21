@@ -3,6 +3,9 @@ package eu.pb4.paladinsfurniturepatch.impl;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import eu.pb4.paladinsfurniturepatch.PaladinsFurniturePatch;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.BlockItem;
@@ -11,7 +14,9 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 import org.jspecify.annotations.Nullable;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Locale;
 import java.util.TreeSet;
@@ -31,9 +36,11 @@ import java.util.TreeSet;
  * are absent from the mod's jar are synthesized; static blockstates and item definitions still come
  * from the jar first.
  */
-final class PFMGeneratedAssets {
+public final class PFMGeneratedAssets {
     private static final Gson GSON = new GsonBuilder().create();
     private static final String NS = "pfm";
+    /** PFM's English names with the generated ones merged in, read once for searching. */
+    private static JsonObject LANGUAGE;
 
     /**
      * The names PFM's client language generator produces for its variant furniture.
@@ -125,6 +132,51 @@ final class PFMGeneratedAssets {
             }
         }
         return added;
+    }
+
+    /**
+     * The name PFM's own client shows for an item, for searching.
+     *
+     * <p>A dedicated server has no translation of its own: the block's name component is still its
+     * raw {@code block.pfm.*} key, and the variants are built on a client by a language generator
+     * that cannot run here. Searching therefore has to use the same rules the generated language
+     * file uses, or a filler cabinet is only findable by its registry path.
+     */
+    public static @Nullable String searchName(Item item) {
+        var id = BuiltInRegistries.ITEM.getKey(item);
+        if (!id.getNamespace().equals(NS)) {
+            return null;
+        }
+
+        return englishName(id.getPath(), language());
+    }
+
+    /** PFM's English language file with the generated names merged in, read once. */
+    private static synchronized JsonObject language() {
+        if (LANGUAGE == null) {
+            var language = new JsonObject();
+            var container = FabricLoader.getInstance().getModContainer(NS).orElse(null);
+            if (container != null) {
+                for (var root : container.getRootPaths()) {
+                    var file = root.resolve("assets/" + NS + "/lang/en_us.json");
+                    if (!Files.isRegularFile(file)) {
+                        continue;
+                    }
+
+                    try {
+                        language = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+                    } catch (IOException | RuntimeException exception) {
+                        PaladinsFurniturePatch.LOGGER.warn("Could not read PFM's English names", exception);
+                    }
+                    break;
+                }
+            }
+
+            addLanguageNames(language);
+            LANGUAGE = language;
+        }
+
+        return LANGUAGE;
     }
 
     private static int addExactName(JsonObject language, String key, String name) {

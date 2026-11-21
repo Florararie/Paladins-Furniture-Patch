@@ -34,9 +34,10 @@ import java.util.List;
  * than extended.
  */
 public final class PolyOfficeChair implements PolymerEntity {
-    // The chair entity sits at seat height, so the model only needs lowering by the 0.05 by
-    // which its own seat is above the rider's feet.
-    private static final Vector3f CHAIR_OFFSET = new Vector3f(0f, -0.05f, 0f);
+    // The chair entity sits at seat height, so the model is lowered by the 0.25 between the chair
+    // entity and the model's own centre: the seat is 12/16 of a block up the model, and an item
+    // display draws a model half a block above and below its entity.
+    private static final Vector3f CHAIR_OFFSET = new Vector3f(0f, -0.25f, 0f);
     private static final int POS_ROT_INTERPOLATION_TICKS = 3;
 
     private static boolean resolved;

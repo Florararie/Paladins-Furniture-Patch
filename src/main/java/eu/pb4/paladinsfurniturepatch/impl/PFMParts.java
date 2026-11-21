@@ -37,7 +37,7 @@ final class PFMParts {
         var path = BuiltInRegistries.BLOCK.getKey(block).getPath();
         return switch (family) {
             case "simple_bed" -> path.contains("classic") ? classicBed() : simpleBed();
-            case "basic_lamp" -> lamp();
+            case "basic_lamp" -> lampSpecs();
             case "classic_nightstand" -> nightstand();
             case "kitchen_cabinet" -> cabinet();
             case "kitchen_drawer" -> drawer();
@@ -47,6 +47,7 @@ final class PFMParts {
             case "iron_fridge" -> ironFridge();
             case "freezer" -> freezer(path.contains("gray"));
             case "chair", "chair_classic", "chair_dinner", "chair_modern" -> chair(family);
+            case "simple_stool", "classic_stool", "modern_stool", "log_stool" -> stool(family);
             case "desk_basic" -> deskBasic();
             case "desk_cabinet_basic" -> deskCabinet();
             case "table_basic" -> tableBasic();
@@ -83,6 +84,7 @@ final class PFMParts {
             case "iron_fridge" -> "if0";
             case "freezer" -> "z0";
             case "chair", "chair_classic", "chair_dinner", "chair_modern" -> "ch0";
+            case "simple_stool", "classic_stool", "modern_stool", "log_stool" -> "st0";
             case "desk_basic" -> "db0";
             case "desk_cabinet_basic" -> "dc0";
             case "table_basic" -> "bt0";
@@ -160,10 +162,6 @@ final class PFMParts {
                 new Spec("l4", "block/basic_lamp/basic_lamp_shade"),
                 new Spec("l5", "block/basic_lamp/basic_lamp_light_bulb_off"),
                 new Spec("l6", "block/basic_lamp/basic_lamp_light_bulb_on"));
-    }
-
-    private static List<Spec> lamp() {
-        return lampSpecs();
     }
 
     private static List<Spec> nightstand() {
@@ -278,6 +276,11 @@ final class PFMParts {
     private static List<Spec> chair(String family) {
         var base = "block/" + family + "/" + family;
         return List.of(new Spec("ch0", base), new Spec("ch1", base + "_tucked"));
+    }
+
+    private static List<Spec> stool(String family) {
+        var base = "block/" + family + "/" + family;
+        return List.of(new Spec("st0", base), new Spec("st1", base + "_tucked"));
     }
 
     /** The basic desk's five parts, in the mod's baked-model order. */

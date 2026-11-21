@@ -443,6 +443,13 @@ public final class PFMBlockStates {
             // the generated blockstate only names the basin, so a filled sink would look empty.
             out = withSinkWater(block, out);
 
+            // A toilet's used water is a separate model for the dirty and flushing states. The
+            // server reads this blockstate to pick the models its display elements draw, so the
+            // brown water has to be chosen here as well as in the finished pack.
+            if (id.getPath().equals("basic_toilet")) {
+                PFMAssets.useDirtyToiletModels(out);
+            }
+
             return out;
         } catch (RuntimeException exception) {
             PaladinsFurniturePatch.LOGGER.warn("Could not rewrite the blockstate for {}", id, exception);

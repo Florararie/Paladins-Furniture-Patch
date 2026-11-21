@@ -44,7 +44,10 @@ public final class OfficeChairHitboxes {
     private static final float HEIGHT = 1.1f;
 
     /** How far the entity is raised so a rider is drawn at the seat instead of on the floor. */
-    private static final float SEAT_HEIGHT = 0.55f;
+    private static final float SEAT_HEIGHT = 0.75f;
+
+    /** How far the model is lowered to stay where it was once the entity moved up to the seat. */
+    private static final float MODEL_DROP = 0.20f;
 
     /** A chair's clickable box, and the level it lives in so a tick only touches its own. */
     private record Hitbox(UUID id, ResourceKey<Level> level) {
@@ -137,7 +140,7 @@ public final class OfficeChairHitboxes {
         }
         chair.setPos(chair.getX(), (double) chair.getBlockY() + SEAT_HEIGHT, chair.getZ());
 
-        hitbox.snapTo(chair.getX(), chair.getY(), chair.getZ(), chair.getYRot(), 0f);
+        hitbox.snapTo(chair.getX(), chair.getY() - MODEL_DROP, chair.getZ(), chair.getYRot(), 0f);
         hitbox.setNoGravity(true);
         hitbox.setInvulnerable(true);
         size(hitbox);
@@ -249,7 +252,7 @@ public final class OfficeChairHitboxes {
                 chair.setDeltaMovement(0, 0, 0);
             }
 
-            hitbox.setPos(chair.getX(), chair.getY(), chair.getZ());
+            hitbox.setPos(chair.getX(), chair.getY() - MODEL_DROP, chair.getZ());
             hitbox.setYRot(chair.getYRot());
         }
     }

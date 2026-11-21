@@ -6,6 +6,7 @@ import eu.pb4.sgui.api.gui.SimpleGui;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -35,24 +36,12 @@ import java.util.List;
  * {@link GuiPack}), so the screen shows the mod's title bar, palette and slot frames rather than a
  * chest.
  *
- * <p>The workbench has no storage to show: it crafts from the player's inventory. Its top row holds
- * the mod's result slot, the next fifty-one hold one craftable piece of furniture each and the last
- * two turn the page. Clicking a piece selects that recipe, exactly as clicking it in the mod's own
- * list does.
- *
  * <p>The microwave only has a start button in the mod's screen and the trashcan only a clear
  * button; both are shown as an item whose click runs the same server-side action.
  */
 public final class FurnitureGui extends SimpleGui {
     private static final int PLAYER_SLOTS = 36;
 
-    /** The result slot is cell 0, so the list fills cells 1 to 51 and the page arrows 52 and 53. */
-    private static final int PICKER_FIRST = 1;
-    private static final int PICKER_SIZE = 51;
-    private static final int PAGE_PREVIOUS = 52;
-    private static final int PAGE_NEXT = 53;
-
-    private static final int MICROWAVE_SLOT = 13;
     private static final int MICROWAVE_BUTTON = 15;
     private static final int TRASHCAN_BUTTON = 17;
 
@@ -62,9 +51,8 @@ public final class FurnitureGui extends SimpleGui {
 
     private final AbstractContainerMenu source;
     private final GuiPack.Screen screen;
+    private final Component baseTitle;
     private final int containerSlots;
-    private final boolean workbench;
-    private int page;
     private int ticks;
     private boolean sourceClosed;
 
@@ -77,7 +65,7 @@ public final class FurnitureGui extends SimpleGui {
         super(type(screen.rows()), player, false);
         this.source = source;
         this.screen = screen;
-        this.workbench = screen == GuiPack.Screen.WORKBENCH;
+        this.baseTitle = title;
 
         // The mod's menu is never the menu the client knows. Its remote slot list is empty, so
         // letting it broadcast would clear the screen; its own slots are still live and still
@@ -97,11 +85,17 @@ public final class FurnitureGui extends SimpleGui {
      */
     private void wireSlots() {
         var cells = this.screen.cellsFor(this.containerSlots);
+        var fuel = this.fuelSlot();
         for (int i = 0; i < cells.length; i++) {
             // The mod's slot is wrapped rather than handed over as it is: a slot's own index is part
             // of the click protocol, and the mod's index is its place in the mod's menu, not the cell
             // it is drawn in here.
-            this.setSlot(cells[i], new ForwardingSlot(this.source.slots.get(i), cells[i]));
+            //
+            // An input is also told about the fuel slot: the mod would accept a coal in the cooking
+            // row, and a plain slot grid shift-clicks into the first slot that takes the item, so
+            // fuel landed on the stove instead of in the firebox.
+            this.setSlot(cells[i], new ForwardingSlot(this.source.slots.get(i), cells[i],
+                    this.screen.isInput(i) ? fuel : null));
         }
 
         if (this.containerSlots > cells.length) {
@@ -112,8 +106,8 @@ public final class FurnitureGui extends SimpleGui {
 
     /** Builds and opens the screen, or returns null when it could not be opened. */
     public static @Nullable FurnitureGui open(ServerPlayer player, AbstractContainerMenu source,
-                                              String path, boolean workbench, Component title) {
-        var screen = GuiPack.Screen.forPath(path, workbench, source.slots.size() - PLAYER_SLOTS);
+                                              String path, Component title) {
+        var screen = GuiPack.Screen.forPath(path, source.slots.size() - PLAYER_SLOTS);
         var gui = new FurnitureGui(player, source, screen, title);
         if (!gui.open()) {
             gui.closeSource();
@@ -138,74 +132,108 @@ public final class FurnitureGui extends SimpleGui {
     }
 
     private void refresh() {
-        if (this.workbench) {
-            this.refreshPicker();
-        } else if (this.screen == GuiPack.Screen.MICROWAVE) {
+        if (this.screen == GuiPack.Screen.MICROWAVE) {
             this.setSlot(MICROWAVE_BUTTON, this.microwaveButton());
         } else if (this.screen == GuiPack.Screen.TRASHCAN) {
             this.setSlot(TRASHCAN_BUTTON, this.trashcanButton());
+        } else if (this.screen.hasGauges()) {
+            this.showGauges();
         }
     }
 
-    private void refreshPicker() {
-        var player = this.getPlayer();
-        int recipes = WorkbenchRecipes.count(this.source);
-        int pages = Math.max(1, (recipes + PICKER_SIZE - 1) / PICKER_SIZE);
-        this.page = Math.max(0, Math.min(this.page, pages - 1));
+    /** The mod's fuel slot for this screen, or null when the screen burns none. */
+    private @Nullable Slot fuelSlot() {
+        int index = this.screen.fuelSlot();
+        return index >= 0 && index < this.source.slots.size() ? this.source.slots.get(index) : null;
+    }
 
-        var icons = WorkbenchRecipes.icons(this.source, player, this.page * PICKER_SIZE, PICKER_SIZE);
-        for (int i = 0; i < PICKER_SIZE; i++) {
-            int cell = PICKER_FIRST + i;
-            if (i >= icons.size() || icons.get(i).isEmpty()) {
-                this.clearSlot(cell);
-                continue;
-            }
+    /**
+     * Draws the fuel and cooking gauges.
+     *
+     * <p>The mod's menus already answer with the numbers its own screens draw - a flame lit out of
+     * thirteen, a bar out of thirteen or twenty-four - so a gauge only has to choose a picture. The
+     * values are read from the menu, which holds them for whichever block opened it, so a stove, an
+     * oven and a freezer all work through the same code.
+     */
+    private void showGauges() {
+        int fuel = Math.min(13, Math.max(0, this.fuelLevel()));
+        this.setSlot(this.screen.fuelCell(), gauge(GuiPack.fuel(this.screen, fuel), "Fuel", fuel, 13));
 
-            var stack = icons.get(i);
-            int recipe = this.page * PICKER_SIZE + i;
-            this.setSlot(cell, new GuiElementBuilder(stack)
-                    .setCallback((index, type, action, gui) -> {
-                        if (WorkbenchRecipes.select(this.source, player, recipe)) {
-                            this.refreshPicker();
-                        }
-                    })
-                    .build());
+        // Both screens are read on the same twelve-step scale, whatever the menu reports.
+        int cooking = this.cookingLevel();
+        this.setSlot(this.screen.progressCell(), gauge(GuiPack.progress(cooking), "Cooking", cooking, 12));
+    }
+
+    /** A gauge: a paper stack drawn as one of the pack's gauge pictures, naming its own reading. */
+    private GuiElementBuilder gauge(Identifier icon, String label, int level, int steps) {
+        var stack = button(icon);
+        int percent = steps <= 0 ? 0 : Math.round(level * 100f / steps);
+        stack.set(DataComponents.CUSTOM_NAME, Component.literal(label + ": " + percent + "%")
+                .withStyle(ChatFormatting.GRAY));
+        // A callback is what keeps a gauge from being a slot you can take a picture out of; it does
+        // nothing else, because a gauge is a reading and not a button.
+        return new GuiElementBuilder(stack).setCallback((index, type, action, gui) -> {
+        });
+    }
+
+    /** How much fuel is left, out of thirteen, as the mod's own screen shows it. */
+    private int fuelLevel() {
+        return this.screen == GuiPack.Screen.FREEZER
+                ? this.menuInt("getFuelProgress", 0)
+                : this.menuInt("getLitProgress", 0);
+    }
+
+    /** How far cooking has got, out of twelve: the furthest cell of a stove, or the freezer's bar. */
+    private int cookingLevel() {
+        if (this.screen == GuiPack.Screen.FREEZER) {
+            // The freezer reports twenty-four steps; halving them fits the same gauge.
+            return Math.min(12, Math.max(0, this.menuInt("getFreezeProgress", 0) * 12 / 24));
         }
 
-        // An arrow only exists on a side there is a page on, as in the mod's own list, so the page
-        // count reads from the buttons that are there rather than from greyed-out leftovers.
-        String label = (this.page + 1) + "/" + pages;
-        if (this.page > 0) {
-            this.setSlot(PAGE_PREVIOUS, pageButton("ui_prev", "Previous page " + label, () -> {
-                this.page--;
-                this.refreshPicker();
-            }));
-        } else {
-            this.clearSlot(PAGE_PREVIOUS);
+        int best = 0;
+        for (int slot = 0; slot < 9; slot++) {
+            best = Math.max(best, this.menuInt("getCookProgress", 0, slot, 12));
+        }
+        return Math.min(12, best);
+    }
+
+    /**
+     * Asks the mod's own menu for one of its progress numbers.
+     *
+     * <p>Paladin's Furniture is not a compile dependency, so the menus are addressed by the names
+     * their screens use. A menu that does not answer leaves its gauge empty rather than breaking the
+     * screen.
+     */
+    private int menuInt(String method, int fallback, int... arguments) {
+        var types = new Class<?>[arguments.length];
+        for (int i = 0; i < arguments.length; i++) {
+            types[i] = int.class;
         }
 
-        if (this.page + 1 < pages) {
-            this.setSlot(PAGE_NEXT, pageButton("ui_next", "Next page " + label, () -> {
-                this.page++;
-                this.refreshPicker();
-            }));
-        } else {
-            this.clearSlot(PAGE_NEXT);
+        try {
+            return (Integer) this.source.getClass().getMethod(method, types).invoke(this.source, boxed(arguments));
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            return fallback;
         }
     }
 
-    private static GuiElementBuilder pageButton(String icon, String name, Runnable action) {
-        return new GuiElementBuilder(button(icon))
-                .setName(Component.literal(name).withStyle(ChatFormatting.WHITE))
-                .hideDefaultTooltip()
-                .setCallback((index, type, containerInput, gui) -> action.run());
+    private static Object[] boxed(int[] values) {
+        var out = new Object[values.length];
+        for (int i = 0; i < values.length; i++) {
+            out[i] = values[i];
+        }
+        return out;
     }
 
     /** A button's icon: a paper stack naming one of the pack's own button models. */
-    private static ItemStack button(String icon) {
+    private static ItemStack button(Identifier icon) {
         var stack = new ItemStack(Items.PAPER);
-        stack.set(DataComponents.ITEM_MODEL, GuiPack.ui(icon));
+        stack.set(DataComponents.ITEM_MODEL, icon);
         return stack;
+    }
+
+    private static ItemStack button(String icon) {
+        return button(GuiPack.ui(icon));
     }
 
     private GuiElementBuilder microwaveButton() {
@@ -216,7 +244,10 @@ public final class FurnitureGui extends SimpleGui {
                 Component.literal(active ? "Cooking..." : "Start cooking").withStyle(ChatFormatting.WHITE));
         stack.set(DataComponents.LORE, new ItemLore(List.of(
                 Component.literal(active ? microwaveProgress() : status).withStyle(ChatFormatting.GRAY))));
-        return new GuiElementBuilder(stack).setCallback((index, type, action, gui) -> this.startMicrowave());
+        return new GuiElementBuilder(stack).setCallback((index, type, action, gui) -> {
+            GuiSounds.click(this.getPlayer());
+            this.startMicrowave();
+        });
     }
 
     private GuiElementBuilder trashcanButton() {
@@ -224,7 +255,10 @@ public final class FurnitureGui extends SimpleGui {
         stack.set(DataComponents.CUSTOM_NAME, Component.literal("Clear contents").withStyle(ChatFormatting.WHITE));
         stack.set(DataComponents.LORE, new ItemLore(List.of(
                 Component.literal("Click to clear").withStyle(ChatFormatting.GRAY))));
-        return new GuiElementBuilder(stack).setCallback((index, type, action, gui) -> this.clearTrashcan());
+        return new GuiElementBuilder(stack).setCallback((index, type, action, gui) -> {
+            GuiSounds.click(this.getPlayer());
+            this.clearTrashcan();
+        });
     }
 
     /**
@@ -385,11 +419,7 @@ public final class FurnitureGui extends SimpleGui {
         }
         this.ticks = 0;
 
-        if (this.workbench) {
-            this.refreshPicker();
-        } else if (this.screen == GuiPack.Screen.MICROWAVE) {
-            this.setSlot(MICROWAVE_BUTTON, this.microwaveButton());
-        }
+        this.refresh();
     }
 
     @Override
@@ -416,11 +446,14 @@ public final class FurnitureGui extends SimpleGui {
      */
     private static final class ForwardingSlot extends Slot {
         private final Slot target;
+        /** The fuel slot this input must not pre-empt, or null when the slot has no such rule. */
+        private final @Nullable Slot reserved;
 
-        private ForwardingSlot(Slot target, int index) {
+        private ForwardingSlot(Slot target, int index, @Nullable Slot reserved) {
             super(target.container, target.getContainerSlot(), 0, 0);
             this.target = target;
             this.index = index;
+            this.reserved = reserved;
         }
 
         @Override
@@ -450,6 +483,11 @@ public final class FurnitureGui extends SimpleGui {
 
         @Override
         public boolean mayPlace(ItemStack stack) {
+            // Fuel belongs in the firebox. Refusing it here is what sends a shift-clicked coal to the
+            // fuel slot, because a plain grid fills the first slot that accepts the stack.
+            if (this.reserved != null && this.reserved.mayPlace(stack)) {
+                return false;
+            }
             return this.target.mayPlace(stack);
         }
 
